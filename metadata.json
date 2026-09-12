@@ -1,0 +1,6 @@
+{
+  "name": "Personal Knowledge Management",
+  "description": "Personal knowledge management system with directory organization, note files, tag indexing, wiki-linking, bidirectional graph visualization, and voice-to-text dictation.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

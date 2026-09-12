@@ -1,0 +1,289 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #ec4899;
+  --color-primary-hover: #db2777;
+  --color-primary-light: rgba(236, 72, 153, 0.15);
+  --color-background: #0c0714;
+  --color-surface: #150d24;
+  --color-surface-secondary: #1f1338;
+  --color-border: #2e1c52;
+  --color-text: #faf5ff;
+  --color-text-muted: #c084fc;
+
+  --font-space: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-space-mono: 'Space Mono', monospace;
+  --radius-theme: 6px;
+}
+
+:root {
+  --primaryColor: #ec4899;
+  --primaryHoverColor: #db2777;
+  --primaryLightColor: rgba(236, 72, 153, 0.15);
+  --backgroundColor: #0c0714;
+  --surfaceColor: #150d24;
+  --surfaceSecondaryColor: #1f1338;
+  --borderColor: #2e1c52;
+  --textColor: #faf5ff;
+  --textMutedColor: #c084fc;
+  --noteBtnBg: rgb(12 7 20);
+  --radiusPx: 6px;
+  --fontFamily: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --fontFamilyMono: 'Space Mono', monospace;
+
+  --btn-bg: #ec4899;
+  --btn-bg-hover: #db2777;
+  --btn-text: #ffffff;
+  --bg-primary: #0c0714;
+  --bg-secondary: #150d24;
+  --text-primary: #faf5ff;
+  --text-secondary: #c084fc;
+}
+
+@layer base {
+  *, ::before, ::after {
+    border-color: var(--borderColor, #2e1c52);
+  }
+  body {
+    font-family: var(--fontFamily, 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif);
+    background-color: var(--backgroundColor, #0c0714);
+    color: var(--textColor, #faf5ff);
+  }
+  code, kbd, samp, pre {
+    font-family: var(--fontFamilyMono, 'Space Mono', monospace);
+  }
+  input, textarea, select, button {
+    font-family: inherit;
+  }
+}
+
+/* Dynamic theme overrides to support real-time palette editing */
+[class*="bg-[#0c0714]"] {
+  background-color: var(--backgroundColor, #0c0714) !important;
+}
+[class*="bg-[#150d24]"], [class*="bg-[#150D24]"] {
+  background-color: var(--surfaceColor, #150d24) !important;
+}
+[class*="bg-[#1f1338]"] {
+  background-color: var(--surfaceSecondaryColor, #1f1338) !important;
+}
+[class*="border-[#2e1c52]"] {
+  border-color: var(--borderColor, #2e1c52) !important;
+}
+[class*="text-[#faf5ff]"] {
+  color: var(--textColor, #faf5ff) !important;
+}
+[class*="text-[#c084fc]"] {
+  color: var(--textMutedColor, #c084fc) !important;
+}
+[class*="bg-[#ec4899]"], [class*="bg-[#EC4899]"] {
+  background-color: var(--primaryColor, #ec4899) !important;
+}
+[class*="border-[#ec4899]"], [class*="border-[#EC4899]"] {
+  border-color: var(--primaryColor, #ec4899) !important;
+}
+[class*="text-[#ec4899]"], [class*="text-[#EC4899]"] {
+  color: var(--primaryColor, #ec4899) !important;
+}
+[class*="hover:bg-[#db2777]"]:hover {
+  background-color: var(--primaryHoverColor, #db2777) !important;
+}
+[class*="hover:border-[#ec4899]"]:hover {
+  border-color: var(--primaryColor, #ec4899) !important;
+}
+[class*="focus:border-[#ec4899]"]:focus {
+  border-color: var(--primaryColor, #ec4899) !important;
+}
+[class*="rounded-[6px]"] {
+  border-radius: var(--radiusPx, 6px) !important;
+}
+
+/* Reduced border value to 0.7px for ultra-crisp hairline styling */
+.border {
+  border-width: 0.2px;
+}
+.border-t {
+  border-top-width: 0.2px;
+}
+.border-b {
+  border-bottom-width: 0.2px;
+}
+.border-l {
+  border-left-width: 0.2px;
+}
+.border-r {
+  border-right-width: 0.2px;
+}
+.border-x {
+  border-left-width: 0.2px;
+  border-right-width: 0.2px;
+}
+.border-y {
+  border-top-width: 0.2px;
+  border-bottom-width: 0.2px;
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--backgroundColor, #0c0714);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--borderColor, #2e1c52);
+  border-radius: var(--radiusPx, 6px);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--textMutedColor, #c084fc);
+}
+
+::selection {
+  background-color: var(--primaryColor, #ec4899);
+  color: var(--textColor, #faf5ff);
+}
+
+/* Buttons inside rendered notes */
+.note-rendered-content button,
+.markdown-note button {
+  background-color: var(--noteBtnBg, rgb(12 7 20));
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.note-rendered-content button:hover,
+.markdown-note button:hover {
+  background-color: #24143e !important;
+  border-color: var(--primaryColor, #ec4899) !important;
+  color: #faf5ff !important;
+  box-shadow: 0 0 10px rgba(236, 72, 153, 0.25);
+  transform: translateY(-0.5px);
+}
+
+.note-rendered-content button:active,
+.markdown-note button:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+
+/* Hyperlinks and anchors hover styling */
+a {
+  color: var(--primaryColor, #ec4899);
+  text-decoration: underline;
+  text-decoration-color: rgba(236, 72, 153, 0.4);
+  text-underline-offset: 3px;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+a:hover {
+  color: #f472b6;
+  text-decoration-color: #ec4899;
+  text-shadow: 0 0 8px rgba(236, 72, 153, 0.35);
+}
+
+/* Global button tactile hover & active feedback */
+button:not(:disabled) {
+  cursor: pointer;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-0.5px) scale(1.025);
+}
+
+button:not(:disabled):not(.bg-transparent):not(.w-full):hover {
+  box-shadow: 0 4px 14px -1px rgba(0, 0, 0, 0.45), 0 0 10px rgba(236, 72, 153, 0.22);
+}
+
+/* Full width elements have subtle vertical or horizontal translation without expanding outside bounding box */
+button.w-full:not(:disabled):hover {
+  transform: translateY(-0.5px);
+}
+
+/* Transparent buttons keep subtle scale without bounding-box shadows */
+button.bg-transparent:not(:disabled):hover {
+  transform: scale(1.08);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0.5px) scale(0.97);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+button.w-full:not(:disabled):active {
+  transform: scale(0.99);
+}
+
+/* Smooth focus rings for accessibility */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--primaryColor, #ec4899);
+  outline-offset: 2px;
+}
+
+/* Syntax Highlighting (Highlight.js) Theme */
+.hljs {
+  color: #f1f5f9;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+  color: #f43f5e; /* Vibrant Rose / Red */
+  font-weight: 600;
+}
+.hljs-string,
+.hljs-title,
+.hljs-section,
+.hljs-attribute,
+.hljs-literal,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-addition {
+  color: #34d399; /* Emerald Green */
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-deletion,
+.hljs-meta {
+  color: #94a3b8; /* Cool Slate */
+  font-style: italic;
+}
+.hljs-number,
+.hljs-regexp,
+.hljs-link {
+  color: #fbbf24; /* Amber */
+}
+.hljs-variable,
+.hljs-params {
+  color: #fdba74; /* Orange */
+}
+.hljs-function,
+.hljs-title.function_ {
+  color: #38bdf8; /* Sky Blue */
+}
+.hljs-built_in,
+.hljs-symbol,
+.hljs-bullet {
+  color: #ec4899; /* Neon Pink */
+}
+.hljs-tag,
+.hljs-name {
+  color: #f43f5e; /* Rose / Coral */
+}
+.hljs-attr {
+  color: #c084fc; /* Violet / Purple */
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: bold;
+}
+
