@@ -72,6 +72,7 @@ export interface ThemeConfig {
   name: string;
   description?: string;
   isDark: boolean;
+  borderlessButtons?: boolean;
   primaryColor: string;
   primaryHoverColor: string;
   primaryLightColor: string;

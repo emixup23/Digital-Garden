@@ -227,6 +227,46 @@ button:focus-visible, a:focus-visible {
   outline-offset: 2px;
 }
 
+/* Theme Mode: Buttons Without Borders (Seamless Button Aesthetic) */
+html.theme-borderless-buttons button,
+html.theme-borderless-buttons [role="button"],
+.theme-borderless-buttons button,
+.theme-borderless-buttons [role="button"],
+html.theme-borderless-buttons .note-rendered-content button,
+html.theme-borderless-buttons .markdown-note button,
+.theme-borderless-buttons .note-rendered-content button,
+.theme-borderless-buttons .markdown-note button {
+  border: none !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+  border-style: none !important;
+}
+
+html.theme-borderless-buttons button:hover,
+html.theme-borderless-buttons [role="button"]:hover,
+.theme-borderless-buttons button:hover,
+.theme-borderless-buttons [role="button"]:hover,
+html.theme-borderless-buttons button:focus,
+.theme-borderless-buttons button:focus,
+html.theme-borderless-buttons button:active,
+.theme-borderless-buttons button:active {
+  border-color: transparent !important;
+  border-width: 0 !important;
+}
+
+html.theme-borderless-buttons button[class*="border"],
+.theme-borderless-buttons button[class*="border"] {
+  border: none !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+}
+
+/* Subtle elevation when hovering borderless buttons */
+html.theme-borderless-buttons button:not(:disabled):hover,
+.theme-borderless-buttons button:not(:disabled):hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+
 /* Syntax Highlighting (Highlight.js) Theme */
 .hljs {
   color: #f1f5f9;

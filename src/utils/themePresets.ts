@@ -1,10 +1,53 @@
 import { ThemeConfig } from '../types';
 
+export const BORDERLESS_MINIMAL_THEME: ThemeConfig = {
+  id: 'borderless-minimal',
+  name: 'Borderless Minimal',
+  description: 'Ultra-clean modern dark aesthetic with completely borderless buttons and seamless surfaces',
+  isDark: true,
+  borderlessButtons: true,
+  primaryColor: '#a855f7',
+  primaryHoverColor: '#9333ea',
+  primaryLightColor: 'rgba(168, 85, 247, 0.15)',
+  backgroundColor: '#09090b',
+  surfaceColor: '#121216',
+  surfaceSecondaryColor: '#1c1c22',
+  borderColor: '#27272a',
+  textColor: '#fafafa',
+  textMutedColor: '#a1a1aa',
+  noteButtonBg: '#22222a',
+  radiusPx: '8px',
+  fontFamily: "'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif",
+  fontFamilyMono: "'Space Mono', monospace",
+};
+
+export const BORDERLESS_LIGHT_THEME: ThemeConfig = {
+  id: 'borderless-light',
+  name: 'Borderless Light',
+  description: 'Pure editorial light theme with seamless borderless buttons, soft depth, and indigo accents',
+  isDark: false,
+  borderlessButtons: true,
+  primaryColor: '#6366f1',
+  primaryHoverColor: '#4f46e5',
+  primaryLightColor: 'rgba(99, 102, 241, 0.12)',
+  backgroundColor: '#f8fafc',
+  surfaceColor: '#ffffff',
+  surfaceSecondaryColor: '#f1f5f9',
+  borderColor: '#e2e8f0',
+  textColor: '#0f172a',
+  textMutedColor: '#64748b',
+  noteButtonBg: '#e2e8f0',
+  radiusPx: '8px',
+  fontFamily: "'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif",
+  fontFamilyMono: "'Space Mono', monospace",
+};
+
 export const DEFAULT_THEME: ThemeConfig = {
   id: 'neon-cyber',
   name: 'Neon Cyber',
   description: 'Signature vibrant pink accent with atmospheric deep purple dark canvas',
   isDark: true,
+  borderlessButtons: false,
   primaryColor: '#ec4899',
   primaryHoverColor: '#db2777',
   primaryLightColor: 'rgba(236, 72, 153, 0.15)',
@@ -21,6 +64,7 @@ export const DEFAULT_THEME: ThemeConfig = {
 };
 
 export const THEME_PRESETS: ThemeConfig[] = [
+  BORDERLESS_MINIMAL_THEME,
   DEFAULT_THEME,
   {
     id: 'obsidian-dark',
@@ -212,6 +256,7 @@ export const THEME_PRESETS: ThemeConfig[] = [
     fontFamily: "'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif",
     fontFamilyMono: "'Space Mono', monospace",
   },
+  BORDERLESS_LIGHT_THEME,
 ];
 
 const THEME_STORAGE_KEY = 'pkm_custom_theme_config';
@@ -256,6 +301,13 @@ export function applyThemeToDOM(theme: ThemeConfig): void {
   } else {
     root.classList.remove('dark');
   }
+
+  // Toggle borderless buttons class for seamless button styling
+  if (safeTheme.borderlessButtons) {
+    root.classList.add('theme-borderless-buttons');
+  } else {
+    root.classList.remove('theme-borderless-buttons');
+  }
 }
 
 /**
@@ -263,6 +315,13 @@ export function applyThemeToDOM(theme: ThemeConfig): void {
  */
 export function loadActiveTheme(): ThemeConfig {
   try {
+    const isActivated = localStorage.getItem('pkm_borderless_theme_activated');
+    if (!isActivated) {
+      localStorage.setItem('pkm_borderless_theme_activated', 'true');
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(BORDERLESS_MINIMAL_THEME));
+      return BORDERLESS_MINIMAL_THEME;
+    }
+
     const raw = localStorage.getItem(THEME_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -276,7 +335,7 @@ export function loadActiveTheme(): ThemeConfig {
   } catch (e) {
     console.warn('Failed to load theme from storage', e);
   }
-  return DEFAULT_THEME;
+  return BORDERLESS_MINIMAL_THEME;
 }
 
 /**

@@ -359,7 +359,7 @@ export const ThemeEditor: FC<ThemeEditorProps> = ({
                       >
                         <div className="flex items-start justify-between">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <h3 className="text-xs font-bold text-[#faf5ff]">{preset.name}</h3>
                               <span
                                 className={`text-[9px] px-1.5 py-0.2 rounded-[4px] font-mono ${
@@ -370,6 +370,11 @@ export const ThemeEditor: FC<ThemeEditorProps> = ({
                               >
                                 {preset.isDark ? 'Dark' : 'Light'}
                               </span>
+                              {preset.borderlessButtons && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-[4px] font-mono bg-[#a855f7]/20 text-[#d8b4fe] border border-[#a855f7]/40 font-semibold">
+                                  No Borders
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11px] text-[#c084fc] mt-0.5 line-clamp-1">{preset.description}</p>
                           </div>
@@ -696,6 +701,72 @@ export const ThemeEditor: FC<ThemeEditorProps> = ({
                   </div>
                 </div>
 
+                {/* Button Border Style Selection */}
+                <div className="p-4 rounded-[6px] bg-[#1f1338] border border-[#2e1c52] space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-[#faf5ff] block">Button Border Style</label>
+                    <p className="text-[11px] text-[#c084fc]">
+                      Configure buttons across the application and inside notes to have sleek borderless styling or classic hairline outlines
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      id="btn-style-borderless-buttons"
+                      type="button"
+                      onClick={() => updateField('borderlessButtons', true)}
+                      className={`p-3 rounded-[6px] border text-left cursor-pointer transition-all ${
+                        activeTheme.borderlessButtons
+                          ? 'border-[#a855f7] bg-[#a855f7]/15 text-[#faf5ff] font-bold shadow-xs'
+                          : 'border-[#2e1c52] bg-[#150d24] text-[#c084fc] hover:text-[#faf5ff] hover:border-[#a855f7]/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold">Without Borders (Seamless)</span>
+                        {activeTheme.borderlessButtons && <Check className="w-3.5 h-3.5 text-[#a855f7]" />}
+                      </div>
+                      <p className="text-[11px] opacity-80 mb-2">
+                        Flat seamless aesthetic with 0px button borders and soft tactile elevation
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <div className="px-2.5 py-1 text-[11px] font-mono rounded-[4px] bg-[#22222a] text-[#faf5ff] shadow-xs">
+                          Button
+                        </div>
+                        <div className="px-2.5 py-1 text-[11px] font-mono rounded-[4px] bg-[#a855f7] text-white">
+                          Action
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      id="btn-style-bordered-buttons"
+                      type="button"
+                      onClick={() => updateField('borderlessButtons', false)}
+                      className={`p-3 rounded-[6px] border text-left cursor-pointer transition-all ${
+                        !activeTheme.borderlessButtons
+                          ? 'border-[#a855f7] bg-[#a855f7]/15 text-[#faf5ff] font-bold shadow-xs'
+                          : 'border-[#2e1c52] bg-[#150d24] text-[#c084fc] hover:text-[#faf5ff] hover:border-[#a855f7]/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold">With Borders (Classic)</span>
+                        {!activeTheme.borderlessButtons && <Check className="w-3.5 h-3.5 text-[#a855f7]" />}
+                      </div>
+                      <p className="text-[11px] opacity-80 mb-2">
+                        Defined outline style with subtle hairline borders framing buttons
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <div className="px-2.5 py-1 text-[11px] font-mono rounded-[4px] bg-[#150d24] border border-[#2e1c52] text-[#faf5ff]">
+                          Button
+                        </div>
+                        <div className="px-2.5 py-1 text-[11px] font-mono rounded-[4px] bg-[#a855f7] border border-[#a855f7] text-white">
+                          Action
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Typography Pairing Selection */}
                 <div className="p-4 rounded-[6px] bg-[#1f1338] border border-[#2e1c52] space-y-3">
                   <div>
@@ -855,10 +926,13 @@ export const ThemeEditor: FC<ThemeEditorProps> = ({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-[6px] font-mono cursor-pointer transition-colors"
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-[6px] font-mono cursor-pointer transition-colors ${
+                        activeTheme.borderlessButtons ? 'border-0 shadow-xs' : 'border'
+                      }`}
                       style={{
                         backgroundColor: activeTheme.noteButtonBg,
-                        borderColor: activeTheme.borderColor,
+                        borderColor: activeTheme.borderlessButtons ? 'transparent' : activeTheme.borderColor,
+                        borderWidth: activeTheme.borderlessButtons ? 0 : '0.2px',
                         color: activeTheme.textColor,
                         borderRadius: activeTheme.radiusPx,
                       }}
@@ -869,10 +943,13 @@ export const ThemeEditor: FC<ThemeEditorProps> = ({
 
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-[6px] font-mono cursor-pointer transition-colors"
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-[6px] font-mono cursor-pointer transition-colors ${
+                        activeTheme.borderlessButtons ? 'border-0 shadow-xs' : 'border'
+                      }`}
                       style={{
                         backgroundColor: activeTheme.noteButtonBg,
-                        borderColor: activeTheme.borderColor,
+                        borderColor: activeTheme.borderlessButtons ? 'transparent' : activeTheme.borderColor,
+                        borderWidth: activeTheme.borderlessButtons ? 0 : '0.2px',
                         color: activeTheme.textColor,
                         borderRadius: activeTheme.radiusPx,
                       }}
@@ -968,6 +1045,12 @@ export const ThemeEditor: FC<ThemeEditorProps> = ({
                     <span>Accent on Background:</span>
                     <span className="font-bold text-[#faf5ff]">
                       {accentContrast.toFixed(1)}:1 {accentContrast >= 3.0 ? '✓ AA Large' : '⚠ Low'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[#c084fc]">
+                    <span>Button Styling:</span>
+                    <span className="font-bold text-[#faf5ff]">
+                      {activeTheme.borderlessButtons ? 'Without borders (Seamless)' : 'With hairline borders'}
                     </span>
                   </div>
                 </div>

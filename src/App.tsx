@@ -238,12 +238,17 @@ export default function App() {
   // Quick Dark / Light toggle handler
   const handleToggleDarkMode = () => {
     if (activeTheme.isDark) {
-      // Find a clean light preset
-      const lightTheme = THEME_PRESETS.find((p) => !p.isDark) || THEME_PRESETS[8];
+      // Find a matching or clean light preset
+      const lightTheme = activeTheme.borderlessButtons
+        ? THEME_PRESETS.find((p) => !p.isDark && p.borderlessButtons) || THEME_PRESETS.find((p) => !p.isDark) || THEME_PRESETS[8]
+        : THEME_PRESETS.find((p) => !p.isDark && !p.borderlessButtons) || THEME_PRESETS.find((p) => !p.isDark) || THEME_PRESETS[8];
       setActiveTheme(lightTheme);
     } else {
-      // Switch to default dark preset
-      setActiveTheme(DEFAULT_THEME);
+      // Switch to dark preset preserving borderless preference
+      const darkTheme = activeTheme.borderlessButtons
+        ? THEME_PRESETS.find((p) => p.isDark && p.borderlessButtons) || DEFAULT_THEME
+        : DEFAULT_THEME;
+      setActiveTheme(darkTheme);
     }
   };
 
