@@ -102,7 +102,6 @@ Related to [[another-note]].
 ## Roadmap
 
 - [ ] Bidirectional sync with [TaskFlow](https://github.com/emixup23/TaskFlow) (tasks mapped to notes, API key auth)
-- [ ] <!-- add your next planned feature -->
 
 ## Contributing
 
