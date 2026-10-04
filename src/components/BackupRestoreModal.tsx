@@ -36,7 +36,15 @@ import {
   formatBytes,
   applyGraphSettings,
 } from '../utils/backupSystem';
-import { INITIAL_NOTES, INITIAL_FOLDERS } from '../utils/seedData';
+import {
+  INITIAL_NOTES,
+  INITIAL_FOLDERS,
+  DEMO_NOTE_IDS,
+  DEMO_FOLDER_IDS,
+  isDemoNote,
+  isDemoFolder,
+  isDemoFolderId,
+} from '../utils/seedData';
 
 interface BackupRestoreModalProps {
   isOpen: boolean;
@@ -262,6 +270,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     }
 
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('pkm_demo_data_removed');
+      }
       saveLocalSnapshot(notes, folders, activeTheme, 'pre-restore', 'Safety snapshot before reset to seed templates');
       onRestoreVault(INITIAL_NOTES, INITIAL_FOLDERS);
       setSnapshots(getLocalSnapshots());
@@ -271,6 +282,79 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       showToast('error', `Failed to reset vault: ${err.message}`);
     }
   };
+
+  // 9. Remove Demo Data (Purge sample seed notes and directories, keeping user notes safe)
+  const handleRemoveDemoData = () => {
+    const demoNotesInVault = notes.filter((n) => isDemoNote(n));
+    const demoFoldersInVault = folders.filter((f) => isDemoFolder(f));
+
+    if (demoNotesInVault.length === 0 && demoFoldersInVault.length === 0) {
+      showToast('info', 'No demo notes or folders found in your vault.');
+      return;
+    }
+
+    const customNotesCount = notes.length - demoNotesInVault.length;
+    const customFoldersCount = folders.length - demoFoldersInVault.length;
+
+    const confirmMsg =
+      `Remove ${demoNotesInVault.length} demo note${demoNotesInVault.length === 1 ? '' : 's'} and ${demoFoldersInVault.length} sample folder${demoFoldersInVault.length === 1 ? '' : 's'}?\n\n` +
+      (customNotesCount > 0
+        ? `Your ${customNotesCount} custom note${customNotesCount === 1 ? '' : 's'} and ${customFoldersCount} folder${customFoldersCount === 1 ? '' : 's'} will be safely preserved.\n\n`
+        : `Your vault will be completely cleared of sample notes so you can start fresh.\n\n`) +
+      `A safety snapshot will be saved automatically before removing, allowing one-click rollback if needed.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      // Step A: Save automatic safety snapshot
+      saveLocalSnapshot(
+        notes,
+        folders,
+        activeTheme,
+        'pre-restore',
+        `Safety snapshot before removing ${demoNotesInVault.length} demo notes`
+      );
+
+      // Step B: Mark demo data as removed in browser storage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pkm_demo_data_removed', 'true');
+      }
+
+      // Step C: Filter out demo notes, reparenting any custom notes placed inside demo folders to root (null)
+      const nonDemoNotes = notes.filter((n) => !isDemoNote(n));
+      const cleanedNotes = nonDemoNotes.map((n) => {
+        if (n.folderId && isDemoFolderId(n.folderId)) {
+          return { ...n, folderId: null, updatedAt: Date.now() };
+        }
+        return n;
+      });
+
+      // Step D: Filter out demo folders, reparenting any subfolders inside demo folders to root (null)
+      const cleanedFolders = folders
+        .filter((f) => !isDemoFolder(f))
+        .map((f) => {
+          if (f.parentId && isDemoFolderId(f.parentId)) {
+            return { ...f, parentId: null };
+          }
+          return f;
+        });
+
+      onRestoreVault(cleanedNotes, cleanedFolders);
+      setSnapshots(getLocalSnapshots());
+      showToast(
+        'success',
+        `Removed ${demoNotesInVault.length} demo notes and ${demoFoldersInVault.length} sample folders. Safety checkpoint created.`
+      );
+    } catch (err: any) {
+      showToast('error', `Failed to remove demo data: ${err.message}`);
+    }
+  };
+
+  // Compute demo data counts
+  const demoNotesCount = notes.filter((n) => isDemoNote(n)).length;
+  const demoFoldersCount = folders.filter((f) => isDemoFolder(f)).length;
+  const userNotesCount = notes.length - demoNotesCount;
+  const userFoldersCount = folders.length - demoFoldersCount;
 
   // Compute total tags
   const totalTags = new Set(notes.flatMap((n) => n.tags || [])).size;
@@ -304,7 +388,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             id="btn-close-backup-modal"
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-[6px] text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#150d24] transition-colors cursor-pointer"
+            className="p-1.5 rounded-[6px] bg-[#1f1338] hover:bg-rose-950/60 text-[#c084fc] hover:text-rose-200 border border-[#2e1c52] hover:border-rose-500/50 transition-colors cursor-pointer"
             title="Close modal (Esc)"
           >
             <X className="w-4 h-4" />
@@ -312,18 +396,18 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-[#2e1c52] bg-[#150d24] px-4 pt-2 gap-1 text-xs shrink-0">
+        <div className="flex border-b border-[#2e1c52] bg-[#150d24] px-4 py-2.5 gap-2 text-xs shrink-0 flex-wrap sm:flex-nowrap">
           <button
             id="tab-backup"
             type="button"
             onClick={() => setActiveTab('backup')}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs transition-all cursor-pointer font-semibold ${
               activeTab === 'backup'
-                ? 'border-[#ec4899] text-[#faf5ff] font-semibold'
-                : 'border-transparent text-[#c084fc] hover:text-[#faf5ff]'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-[#1f1338] text-blue-200/70 hover:text-white hover:bg-[#281745] border border-[#2e1c52]'
             }`}
           >
-            <Download className="w-3.5 h-3.5 text-[#ec4899]" />
+            <Download className="w-3.5 h-3.5 text-white" />
             <span>Create Backup</span>
           </button>
 
@@ -331,13 +415,13 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             id="tab-restore"
             type="button"
             onClick={() => setActiveTab('restore')}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs transition-all cursor-pointer font-semibold ${
               activeTab === 'restore'
-                ? 'border-[#ec4899] text-[#faf5ff] font-semibold'
-                : 'border-transparent text-[#c084fc] hover:text-[#faf5ff]'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'bg-[#1f1338] text-cyan-200/70 hover:text-white hover:bg-[#281745] border border-[#2e1c52]'
             }`}
           >
-            <Upload className="w-3.5 h-3.5 text-[#ec4899]" />
+            <Upload className="w-3.5 h-3.5 text-white" />
             <span>Restore from File</span>
             {restorePreview && restorePreview.isValid && (
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -348,15 +432,21 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             id="tab-snapshots"
             type="button"
             onClick={() => setActiveTab('snapshots')}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs transition-all cursor-pointer font-semibold ${
               activeTab === 'snapshots'
-                ? 'border-[#ec4899] text-[#faf5ff] font-semibold'
-                : 'border-transparent text-[#c084fc] hover:text-[#faf5ff]'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-[#1f1338] text-purple-200/70 hover:text-white hover:bg-[#281745] border border-[#2e1c52]'
             }`}
           >
-            <History className="w-3.5 h-3.5 text-[#ec4899]" />
+            <History className="w-3.5 h-3.5 text-white" />
             <span>Local Snapshots</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#1f1338] text-[#c084fc] border border-[#2e1c52]">
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full border ${
+                activeTab === 'snapshots'
+                  ? 'bg-purple-800 text-white border-purple-400'
+                  : 'bg-[#150d24] text-[#c084fc] border-[#2e1c52]'
+              }`}
+            >
               {snapshots.length}
             </span>
           </button>
@@ -365,14 +455,17 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             id="tab-reset"
             type="button"
             onClick={() => setActiveTab('reset')}
-            className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium cursor-pointer transition-colors ml-auto ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs transition-all cursor-pointer font-semibold sm:ml-auto ${
               activeTab === 'reset'
-                ? 'border-amber-400 text-[#faf5ff] font-semibold'
-                : 'border-transparent text-[#c084fc]/70 hover:text-amber-300'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-[#1f1338] text-amber-300/80 hover:text-amber-100 hover:bg-[#281745] border border-amber-500/30'
             }`}
           >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-            <span>Reset Vault</span>
+            <RotateCcw className="w-3.5 h-3.5 text-white" />
+            <span>Reset & Demo Data</span>
+            {demoNotesCount > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" title={`${demoNotesCount} demo notes present`} />
+            )}
           </button>
         </div>
 
@@ -432,12 +525,47 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                 </div>
               </div>
 
+              {/* Quick Remove Demo Data Banner (Prominently accessible right on overview) */}
+              {(demoNotesCount > 0 || demoFoldersCount > 0) && (
+                <div className="bg-[#1f1338] border border-rose-500/40 rounded-[8px] p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-rose-950/40 via-[#1f1338] to-[#1f1338]">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="p-2 rounded-[6px] bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0 mt-0.5 sm:mt-0">
+                      <Trash2 className="w-4 h-4 text-rose-400" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[#faf5ff] flex items-center gap-2">
+                        <span>Sample Demo Data Detected</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-[4px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-medium">
+                          {demoNotesCount} notes • {demoFoldersCount} folders
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#c084fc] mt-0.5">
+                        {userNotesCount > 0
+                          ? `You have ${userNotesCount} custom note${userNotesCount === 1 ? '' : 's'} which will be safely kept. Remove sample demo notes anytime.`
+                          : 'Clear out the default sample notes & folders to begin with a clean slate.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    id="btn-quick-remove-demo-data"
+                    type="button"
+                    onClick={handleRemoveDemoData}
+                    className="w-full sm:w-auto px-3.5 py-1.5 rounded-[6px] bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shrink-0 shadow-sm border border-rose-400/40"
+                    title="Remove sample demo notes and folders"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-white" />
+                    <span>Remove Demo Data Only</span>
+                  </button>
+                </div>
+              )}
+
               {/* Action 1: Export Complete JSON File */}
               <div className="bg-[#150d24] border border-[#2e1c52] rounded-[8px] p-4 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
                     <h4 className="text-xs font-bold text-[#faf5ff] flex items-center gap-1.5">
-                      <Download className="w-4 h-4 text-[#ec4899]" />
+                      <Download className="w-4 h-4 text-blue-400" />
                       <span>Download Full Vault Backup Archive</span>
                     </h4>
                     <p className="text-[11px] text-[#c084fc] mt-0.5">
@@ -446,26 +574,26 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 flex-wrap sm:flex-nowrap">
                   <button
                     id="btn-download-vault-backup"
                     type="button"
                     onClick={handleDownloadBackup}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-[6px] bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-[6px] bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm border border-blue-400/40"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download Backup (.json)</span>
+                    <Download className="w-3.5 h-3.5 text-white" />
+                    <span>Download Vault Backup Archive (.json)</span>
                   </button>
 
                   <button
                     id="btn-copy-backup-json"
                     type="button"
                     onClick={handleCopyBackup}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-[6px] bg-[#1f1338] hover:bg-[#2e1c52] text-[#c084fc] hover:text-[#faf5ff] text-xs font-medium transition-colors cursor-pointer border border-[#2e1c52]"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-[6px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-colors cursor-pointer shadow-sm border border-purple-400/40"
                     title="Copy full backup JSON to clipboard"
                   >
-                    {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{isCopied ? 'Copied!' : 'Copy to Clipboard'}</span>
+                    {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5 text-white" />}
+                    <span>{isCopied ? 'Copied to Clipboard!' : 'Copy Archive to Clipboard'}</span>
                   </button>
                 </div>
               </div>
@@ -474,7 +602,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               <div className="bg-[#150d24] border border-[#2e1c52] rounded-[8px] p-4 space-y-3">
                 <div>
                   <h4 className="text-xs font-bold text-[#faf5ff] flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-[#ec4899]" />
+                    <Clock className="w-4 h-4 text-emerald-400" />
                     <span>Create Local Browser Snapshot</span>
                   </h4>
                   <p className="text-[11px] text-[#c084fc] mt-0.5">
@@ -489,7 +617,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                     value={newSnapshotLabel}
                     onChange={(e) => setNewSnapshotLabel(e.target.value)}
                     placeholder="Optional memo (e.g. 'Before major refactoring')..."
-                    className="w-full sm:flex-1 py-1.5 px-3 text-xs bg-[#1f1338] border border-[#2e1c52] rounded-[6px] text-[#faf5ff] placeholder:text-[#c084fc]/50 focus:outline-none focus:border-[#ec4899]"
+                    className="w-full sm:flex-1 py-1.5 px-3 text-xs bg-[#1f1338] border border-[#2e1c52] rounded-[6px] text-[#faf5ff] placeholder:text-[#c084fc]/50 focus:outline-none focus:border-emerald-400"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleCreateSnapshot();
                     }}
@@ -498,10 +626,10 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                     id="btn-create-local-snapshot"
                     type="button"
                     onClick={handleCreateSnapshot}
-                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-[#1f1338] hover:bg-[#2e1c52] text-[#faf5ff] text-xs font-semibold transition-colors cursor-pointer border border-[#2e1c52] hover:border-[#ec4899]"
+                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm border border-emerald-400/40"
                   >
-                    <Plus className="w-3.5 h-3.5 text-[#ec4899]" />
-                    <span>Save Snapshot</span>
+                    <Plus className="w-3.5 h-3.5 text-white" />
+                    <span>Save Snapshot Checkpoint</span>
                   </button>
                 </div>
               </div>
@@ -684,12 +812,16 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                         type="button"
                         disabled={isProcessingRestore}
                         onClick={handleExecuteRestore}
-                        className="w-full mt-2 py-2 px-4 rounded-[6px] bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                        className={`w-full mt-2 py-2.5 px-4 rounded-[6px] text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 border ${
+                          restoreMode === 'merge'
+                            ? 'bg-sky-600 hover:bg-sky-500 border-sky-400/40'
+                            : 'bg-orange-600 hover:bg-orange-500 border-orange-400/40'
+                        }`}
                       >
                         {isProcessingRestore ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
                         ) : (
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
                         )}
                         <span>
                           {isProcessingRestore
@@ -727,9 +859,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                         showToast('info', 'All snapshots cleared.');
                       }
                     }}
-                    className="text-[10px] text-rose-400 hover:text-rose-300 hover:underline cursor-pointer"
+                    className="px-2.5 py-1 text-xs font-semibold rounded-[5px] bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-800/80 cursor-pointer transition-colors shadow-2xs"
                   >
-                    Clear All
+                    Clear All Snapshots
                   </button>
                 )}
               </div>
@@ -749,9 +881,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                       setSnapshots(getLocalSnapshots());
                       showToast('success', 'First snapshot created.');
                     }}
-                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] text-xs font-semibold transition-colors cursor-pointer"
+                    className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[6px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm border border-emerald-400/40"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-3.5 h-3.5 text-white" />
                     <span>Create Snapshot Now</span>
                   </button>
                 </div>
@@ -765,7 +897,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                     return (
                       <div
                         key={snap.id}
-                        className="bg-[#1f1338] border border-[#2e1c52] hover:border-[#ec4899]/50 rounded-[8px] p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
+                        className="bg-[#1f1338] border border-[#2e1c52] hover:border-purple-500/50 rounded-[8px] p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors"
                       >
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
@@ -775,7 +907,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                                   ? 'bg-amber-950/80 text-amber-300 border-amber-700'
                                   : isAuto
                                   ? 'bg-indigo-950/80 text-indigo-300 border-indigo-700'
-                                  : 'bg-[#ec4899]/20 text-[#ec4899] border-[#ec4899]/40'
+                                  : 'bg-purple-950/80 text-purple-300 border-purple-700'
                               }`}
                             >
                               {isPreRestore ? 'Safety' : isAuto ? 'Auto' : 'Manual'}
@@ -800,31 +932,31 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                             id={`btn-restore-snap-${snap.id}`}
                             type="button"
                             onClick={() => handleRestoreFromSnapshot(snap)}
-                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-[5px] bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] transition-colors cursor-pointer"
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-[5px] bg-purple-600 hover:bg-purple-500 text-white transition-colors cursor-pointer shadow-2xs border border-purple-400/40"
                             title="Restore this snapshot"
                           >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Restore</span>
+                            <RotateCcw className="w-3 h-3 text-white" />
+                            <span>Rollback</span>
                           </button>
 
                           <button
                             id={`btn-download-snap-${snap.id}`}
                             type="button"
                             onClick={() => downloadVaultBackupFile(snap.data, `snapshot-${snap.label.toLowerCase().replace(/\s+/g, '-')}.json`)}
-                            className="p-1.5 rounded-[5px] bg-[#150d24] text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] transition-colors cursor-pointer border border-[#2e1c52]"
+                            className="p-1.5 rounded-[5px] bg-slate-700 hover:bg-slate-600 text-slate-100 hover:text-white transition-colors cursor-pointer border border-slate-500 shadow-2xs"
                             title="Download snapshot JSON"
                           >
-                            <Download className="w-3.5 h-3.5" />
+                            <Download className="w-3.5 h-3.5 text-slate-100" />
                           </button>
 
                           <button
                             id={`btn-delete-snap-${snap.id}`}
                             type="button"
                             onClick={() => handleDeleteSnapshot(snap.id, snap.label)}
-                            className="p-1.5 rounded-[5px] bg-[#150d24] text-[#c084fc] hover:text-rose-400 hover:bg-[#2e1c52] transition-colors cursor-pointer border border-[#2e1c52]"
+                            className="p-1.5 rounded-[5px] bg-rose-900/80 hover:bg-rose-700 text-rose-200 hover:text-white transition-colors cursor-pointer border border-rose-700 shadow-2xs"
                             title="Delete snapshot"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5 text-rose-200" />
                           </button>
                         </div>
                       </div>
@@ -835,37 +967,120 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: RESET VAULT */}
+          {/* TAB 4: RESET & DEMO DATA MANAGEMENT */}
           {activeTab === 'reset' && (
-            <div className="bg-[#1f1338] border border-amber-900/50 rounded-[8px] p-5 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
-                  <AlertTriangle className="w-6 h-6" />
+            <div className="space-y-4">
+              {/* Card 1: Remove Demo Data */}
+              <div className="bg-[#1f1338] border border-rose-900/50 rounded-[8px] p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <h3 className="text-xs font-bold text-[#faf5ff]">Remove Demo Data</h3>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-[4px] border self-start sm:self-auto ${
+                          demoNotesCount > 0 || demoFoldersCount > 0
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        }`}
+                      >
+                        {demoNotesCount > 0 || demoFoldersCount > 0
+                          ? `${demoNotesCount} demo note${demoNotesCount === 1 ? '' : 's'} • ${demoFoldersCount} folder${demoFoldersCount === 1 ? '' : 's'}`
+                          : 'No demo data present'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#c084fc] mt-1">
+                      Purges the built-in sample notes and demo folders (<em>01 - Systems</em>, <em>02 - Concepts</em>, <em>03 - Projects</em>, <em>04 - Cloud & Linux Infra</em>). Your custom notes and folders remain completely untouched.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xs font-bold text-[#faf5ff]">Factory Reset to Seed Knowledge Vault</h3>
-                  <p className="text-[11px] text-[#c084fc] mt-1">
-                    Replaces all current notes and folders with the original clean system templates (Architecture, Network Topology, Security Protocols, and Data Pipelines).
+
+                {/* Vault Data Breakdown */}
+                <div className="p-3 rounded-[6px] bg-[#150d24] border border-[#2e1c52] text-xs text-[#c084fc] space-y-2">
+                  <div className="flex items-center justify-between text-[11px] border-b border-[#2e1c52]/60 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Demo Notes in Vault:</span>
+                    </span>
+                    <span className="font-mono font-bold text-[#faf5ff]">{demoNotesCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] border-b border-[#2e1c52]/60 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Folder className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Demo Folders in Vault:</span>
+                    </span>
+                    <span className="font-mono font-bold text-[#faf5ff]">{demoFoldersCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-emerald-300">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Custom User Notes (Preserved):</span>
+                    </span>
+                    <span className="font-mono font-bold text-emerald-300">{userNotesCount}</span>
+                  </div>
+                  <div className="text-[11px] text-[#c084fc] pt-1 border-t border-[#2e1c52]/60">
+                    <span className="font-semibold text-[#faf5ff]">Automatic Safety Protection:</span> A pre-restore safety snapshot will be automatically saved in your <em>Local Snapshots</em> before removal, allowing 1-click undo.
+                  </div>
+                </div>
+
+                {/* Remove Demo Data Button */}
+                <button
+                  id="btn-remove-demo-data"
+                  type="button"
+                  disabled={demoNotesCount === 0 && demoFoldersCount === 0}
+                  onClick={handleRemoveDemoData}
+                  className={`w-full py-2.5 px-4 rounded-[6px] font-bold text-xs transition-colors flex items-center justify-center gap-2 shadow-md border ${
+                    demoNotesCount > 0 || demoFoldersCount > 0
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer border-rose-400/50'
+                      : 'bg-emerald-950/60 text-emerald-300 cursor-not-allowed border-emerald-700/60'
+                  }`}
+                >
+                  {demoNotesCount > 0 || demoFoldersCount > 0 ? (
+                    <Trash2 className="w-4 h-4 text-white" />
+                  ) : (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  )}
+                  <span>
+                    {demoNotesCount > 0 || demoFoldersCount > 0
+                      ? `Delete Sample Demo Data (${demoNotesCount} Notes, ${demoFoldersCount} Folders)`
+                      : 'All Demo Data Removed (Clean Vault)'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Card 2: Factory Reset to Seed Knowledge Vault */}
+              <div className="bg-[#1f1338] border border-amber-900/50 rounded-[8px] p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                    <RotateCcw className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-[#faf5ff]">Factory Reset to Seed Knowledge Vault</h3>
+                    <p className="text-[11px] text-[#c084fc] mt-1">
+                      Replaces or restores all initial system templates and sample folders (Architecture, Systems, Projects, and Infra).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-[6px] bg-[#150d24] border border-[#2e1c52] text-xs text-[#c084fc] space-y-1">
+                  <div className="font-semibold text-[#faf5ff]">Automatic Safety Protection:</div>
+                  <p className="text-[11px]">
+                    Before performing the reset, an emergency safety snapshot titled <em>"Safety snapshot before reset to seed templates"</em> will be saved in your Local Snapshots history, so you can restore your current work at any time.
                   </p>
                 </div>
-              </div>
 
-              <div className="p-3 rounded-[6px] bg-[#150d24] border border-[#2e1c52] text-xs text-[#c084fc] space-y-1">
-                <div className="font-semibold text-[#faf5ff]">Automatic Safety Protection:</div>
-                <p className="text-[11px]">
-                  Before performing the reset, an emergency safety snapshot titled <em>"Safety snapshot before reset to seed templates"</em> will be saved in your Local Snapshots history, so you can restore your current work at any time.
-                </p>
+                <button
+                  id="btn-confirm-reset-seed"
+                  type="button"
+                  onClick={handleResetToSeed}
+                  className="w-full py-2.5 px-4 rounded-[6px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-md border border-amber-300/60"
+                >
+                  <RotateCcw className="w-4 h-4 text-slate-950" />
+                  <span>Factory Reset Vault to Default Templates</span>
+                </button>
               </div>
-
-              <button
-                id="btn-confirm-reset-seed"
-                type="button"
-                onClick={handleResetToSeed}
-                className="w-full py-2.5 px-4 rounded-[6px] bg-amber-500 hover:bg-amber-600 text-black font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-md"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>Reset to Clean Seed Vault</span>
-              </button>
             </div>
           )}
         </div>
@@ -880,9 +1095,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             id="btn-footer-close"
             type="button"
             onClick={onClose}
-            className="px-3 py-1 rounded-[5px] bg-[#150d24] hover:bg-[#2e1c52] text-[#faf5ff] transition-colors cursor-pointer border border-[#2e1c52]"
+            className="px-3.5 py-1.5 rounded-[5px] bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors cursor-pointer border border-slate-500 shadow-xs text-xs"
           >
-            Close
+            Close Backup Center
           </button>
         </div>
       </div>

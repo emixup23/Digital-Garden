@@ -62,10 +62,14 @@ async function mirrorToIndexedDB(notes: NoteFile[], folders: Folder[]): Promise<
 
 export function loadNotesFromStorage(): NoteFile[] {
   try {
+    const isDemoRemoved = typeof window !== 'undefined' && localStorage.getItem('pkm_demo_data_removed') === 'true';
     const saved = localStorage.getItem(STORAGE_KEY_NOTES);
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
+        if (parsed.length === 0) {
+          return [];
+        }
         let hasChanges = false;
         // Migrate any pre-existing .mf note names to .md
         const migrated: NoteFile[] = parsed.map((n: NoteFile) => {
@@ -86,12 +90,14 @@ export function loadNotesFromStorage(): NoteFile[] {
           return n;
         });
 
-        const hasCodeNote = migrated.some((n: NoteFile) => n.id === 'note-coding-highlights');
-        if (!hasCodeNote) {
-          const codeNote = INITIAL_NOTES.find((n) => n.id === 'note-coding-highlights');
-          if (codeNote) {
-            migrated.push(codeNote);
-            hasChanges = true;
+        if (!isDemoRemoved) {
+          const hasCodeNote = migrated.some((n: NoteFile) => n.id === 'note-coding-highlights');
+          if (!hasCodeNote) {
+            const codeNote = INITIAL_NOTES.find((n) => n.id === 'note-coding-highlights');
+            if (codeNote) {
+              migrated.push(codeNote);
+              hasChanges = true;
+            }
           }
         }
 
@@ -105,6 +111,9 @@ export function loadNotesFromStorage(): NoteFile[] {
 
         return migrated;
       }
+    }
+    if (isDemoRemoved) {
+      return [];
     }
   } catch (err) {
     console.error('Failed to load notes from localStorage', err);
@@ -131,12 +140,21 @@ export function saveNotesToStorage(notes: NoteFile[]): void {
 
 export function loadFoldersFromStorage(): Folder[] {
   try {
+    const isDemoRemoved = typeof window !== 'undefined' && localStorage.getItem('pkm_demo_data_removed') === 'true';
     const saved = localStorage.getItem(STORAGE_KEY_FOLDERS);
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        if (parsed.length === 0 && isDemoRemoved) {
+          return [];
+        }
+        if (parsed.length > 0) {
+          return parsed;
+        }
       }
+    }
+    if (isDemoRemoved) {
+      return [];
     }
   } catch (err) {
     console.error('Failed to load folders from localStorage', err);

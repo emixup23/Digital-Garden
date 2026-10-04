@@ -205,6 +205,22 @@ export function parseSearchQuery(query: string): ParsedQuery {
 }
 
 /**
+ * Resolves full hierarchical path for a directory, e.g. '01 - Systems / Architecture'
+ */
+export function getFolderPath(folderId: string | null | undefined, folders: Folder[]): string {
+  if (!folderId) return 'Root';
+  const path: string[] = [];
+  let curr = folders.find((f) => f.id === folderId);
+  const visited = new Set<string>();
+  while (curr && !visited.has(curr.id)) {
+    visited.add(curr.id);
+    path.unshift(curr.name);
+    curr = curr.parentId ? folders.find((f) => f.id === curr.parentId) : undefined;
+  }
+  return path.length > 0 ? path.join(' / ') : 'Root';
+}
+
+/**
  * Searches vault notes with rich relevance scoring, snippet extraction, and operator filters
  */
 export function searchVaultNotes(
@@ -215,14 +231,14 @@ export function searchVaultNotes(
   if (!query || !query.trim()) {
     // Return sorted by updated time by default
     return notes.map((n) => {
-      const folder = folders.find((f) => f.id === n.folderId);
+      const pathName = getFolderPath(n.folderId, folders);
       return {
         note: n,
         score: 1,
         matchedFields: ['title'],
         matchedTags: [],
         snippet: null,
-        folderName: folder ? folder.name : 'Root',
+        folderName: pathName,
       };
     });
   }
@@ -230,8 +246,8 @@ export function searchVaultNotes(
   const parsed = parseSearchQuery(query);
   const now = Date.now();
   const ONE_DAY_MS = 86400000;
-  const folderMap = new Map<string, string>();
-  folders.forEach((f) => folderMap.set(f.id, f.name));
+  const folderPathMap = new Map<string, string>();
+  folders.forEach((f) => folderPathMap.set(f.id, getFolderPath(f.id, folders)));
 
   const results: NoteSearchResult[] = [];
 
@@ -240,7 +256,7 @@ export function searchVaultNotes(
     const nameLower = (note.name || '').toLowerCase();
     const contentLower = (note.content || '').toLowerCase();
     const tagsLower = (note.tags || []).map((t) => t.toLowerCase());
-    const folderName = (note.folderId ? folderMap.get(note.folderId) : 'Root') || 'Root';
+    const folderName = (note.folderId ? folderPathMap.get(note.folderId) : 'Root') || 'Root';
     const folderNameLower = folderName.toLowerCase();
 
     // Check negated terms (if any match, exclude immediately)

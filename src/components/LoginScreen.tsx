@@ -102,7 +102,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccess }) => {
             <button
               type="button"
               onClick={handleQuickFill}
-              className="shrink-0 px-2.5 py-1 text-[11px] font-medium bg-[#ec4899]/15 hover:bg-[#ec4899] text-[#ec4899] hover:text-[#faf5ff] border border-[#ec4899]/40 rounded-[4px] transition-all cursor-pointer inline-flex items-center gap-1"
+              className="shrink-0 px-2.5 py-1 text-[11px] font-medium bg-[#ec4899]/15 hover:bg-[#ec4899] hover:text-[#faf5ff] border border-[#ec4899]/40 rounded-[4px] transition-all cursor-pointer inline-flex items-center gap-1"
               title="Pre-fill authorized master credentials"
             >
               <Sparkles className="w-3 h-3" />

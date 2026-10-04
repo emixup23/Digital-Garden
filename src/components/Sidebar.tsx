@@ -27,6 +27,7 @@ import {
   Check,
   CalendarDays,
   Clock,
+  Boxes,
 } from 'lucide-react';
 import { NoteFile, Folder } from '../types';
 import { importMdFile, downloadNoteAsMd, downloadAllNotesAsMd, exportVaultBundle } from '../utils/storage';
@@ -54,10 +55,13 @@ interface SidebarProps {
   onReorderFolders?: (newFolders: Folder[]) => void;
   onReorderNotes?: (newNotes: NoteFile[]) => void;
   onMoveFolder?: (folderId: string, direction: 'up' | 'down') => void;
+  onMoveFolderToParent?: (folderId: string, newParentId: string | null) => void;
   onMoveNote?: (noteId: string, direction: 'up' | 'down') => void;
   onMoveNoteToFolder?: (noteId: string, targetFolderId: string | null, targetIndex?: number) => void;
   onOpenAgenda?: () => void;
   isAgendaActive?: boolean;
+  onOpenCanvas?: () => void;
+  isCanvasActive?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -80,22 +84,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onReorderFolders,
   onReorderNotes,
   onMoveFolder,
+  onMoveFolderToParent,
   onMoveNote,
   onMoveNoteToFolder,
   onOpenAgenda,
   isAgendaActive,
+  onOpenCanvas,
+  isCanvasActive,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
+  const [creatingSubfolderParentId, setCreatingSubfolderParentId] = useState<string | null>(null);
+  const [newSubfolderName, setNewSubfolderName] = useState('');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
 
   // Drag and drop state
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-  const [folderDropPosition, setFolderDropPosition] = useState<'before' | 'after' | null>(null);
+  const [folderDropPosition, setFolderDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
@@ -103,8 +113,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [dragOverFolderAsTargetId, setDragOverFolderAsTargetId] = useState<string | null>(null);
   const [isDragOverRootZone, setIsDragOverRootZone] = useState<boolean>(false);
 
-  // Quick Move Note Target
+  // Quick Move Note Target & Quick Move Folder Target
   const [moveNoteTarget, setMoveNoteTarget] = useState<NoteFile | null>(null);
+  const [moveFolderTarget, setMoveFolderTarget] = useState<Folder | null>(null);
 
   // Active note for context and export
   const activeNote = notes.find((n) => n.id === activeNoteId) || notes[0];
@@ -226,6 +237,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setCollapsedFolders((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
   };
 
+  // Directory hierarchy helpers
+  const getFolderPath = React.useCallback(
+    (folderId: string | null | undefined): string => {
+      if (!folderId) return 'Root';
+      const path: string[] = [];
+      let curr = folders.find((f) => f.id === folderId);
+      const visited = new Set<string>();
+      while (curr && !visited.has(curr.id)) {
+        visited.add(curr.id);
+        path.unshift(curr.name);
+        curr = curr.parentId ? folders.find((f) => f.id === curr.parentId) : undefined;
+      }
+      return path.length > 0 ? path.join(' / ') : 'Root';
+    },
+    [folders]
+  );
+
+  const isFolderDescendant = React.useCallback(
+    (targetFolderId: string, potentialAncestorId: string): boolean => {
+      if (targetFolderId === potentialAncestorId) return true;
+      let curr = folders.find((f) => f.id === targetFolderId);
+      const visited = new Set<string>();
+      while (curr && !visited.has(curr.id)) {
+        if (curr.id === potentialAncestorId) return true;
+        visited.add(curr.id);
+        curr = curr.parentId ? folders.find((f) => f.id === curr.parentId) : undefined;
+      }
+      return false;
+    },
+    [folders]
+  );
+
+  const getChildFolders = React.useCallback(
+    (parentId: string | null) => {
+      const children = folders.filter((f) => (f.parentId || null) === parentId);
+      if (activeSortPreset === 'name-asc') {
+        return [...children].sort((a, b) => a.name.localeCompare(b.name));
+      }
+      if (activeSortPreset === 'name-desc') {
+        return [...children].sort((a, b) => b.name.localeCompare(a.name));
+      }
+      if (activeSortPreset === 'created-desc') {
+        return [...children].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      }
+      return children;
+    },
+    [folders, activeSortPreset]
+  );
+
   // Folder drag handlers
   const handleFolderDragStart = (e: React.DragEvent, folderId: string) => {
     e.stopPropagation();
@@ -248,12 +308,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return;
     }
 
-    // If dragging a folder over another folder to reorder
+    // If dragging a folder over another folder
     if (draggedFolderId && draggedFolderId !== targetFolderId) {
+      // Disallow dragging into own descendant (cycle prevention)
+      if (isFolderDescendant(targetFolderId, draggedFolderId)) {
+        return;
+      }
       e.dataTransfer.dropEffect = 'move';
       const rect = e.currentTarget.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      const pos = e.clientY < midY ? 'before' : 'after';
+      const relY = (e.clientY - rect.top) / rect.height;
+      let pos: 'before' | 'after' | 'inside' = 'inside';
+      if (relY < 0.25) pos = 'before';
+      else if (relY > 0.75) pos = 'after';
+      else pos = 'inside';
+
       if (dragOverFolderId !== targetFolderId || folderDropPosition !== pos) {
         setDragOverFolderId(targetFolderId);
         setFolderDropPosition(pos);
@@ -284,19 +352,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return;
     }
 
-    // 2. Folder dropped onto another folder to reorder
-    if (draggedFolderId && draggedFolderId !== targetFolderId && onReorderFolders) {
-      const currentFolders = [...folders];
-      const sourceIdx = currentFolders.findIndex((f) => f.id === draggedFolderId);
-      const targetIdx = currentFolders.findIndex((f) => f.id === targetFolderId);
+    // 2. Folder dropped onto another folder (nesting or reordering)
+    if (draggedFolderId && draggedFolderId !== targetFolderId) {
+      if (!isFolderDescendant(targetFolderId, draggedFolderId)) {
+        if (folderDropPosition === 'inside') {
+          // Nest inside target folder!
+          onMoveFolderToParent?.(draggedFolderId, targetFolderId);
+          setCollapsedFolders((prev) => ({ ...prev, [targetFolderId]: false }));
+        } else {
+          // Reorder next to target folder with same parent
+          const targetFolder = folders.find((f) => f.id === targetFolderId);
+          const targetParentId = targetFolder?.parentId || null;
+          onMoveFolderToParent?.(draggedFolderId, targetParentId);
 
-      if (sourceIdx !== -1 && targetIdx !== -1) {
-        const [moved] = currentFolders.splice(sourceIdx, 1);
-        const newTargetIdx = currentFolders.findIndex((f) => f.id === targetFolderId);
-        const insertIdx = folderDropPosition === 'before' ? newTargetIdx : newTargetIdx + 1;
-        currentFolders.splice(insertIdx, 0, moved);
-        onReorderFolders(currentFolders);
-        setActiveSortPreset('custom');
+          if (onReorderFolders) {
+            const currentFolders = [...folders];
+            const sourceIdx = currentFolders.findIndex((f) => f.id === draggedFolderId);
+            if (sourceIdx !== -1) {
+              const [moved] = currentFolders.splice(sourceIdx, 1);
+              moved.parentId = targetParentId;
+              const newTargetIdx = currentFolders.findIndex((f) => f.id === targetFolderId);
+              const insertIdx = folderDropPosition === 'before' ? newTargetIdx : newTargetIdx + 1;
+              currentFolders.splice(insertIdx, 0, moved);
+              onReorderFolders(currentFolders);
+              setActiveSortPreset('custom');
+            }
+          }
+        }
       }
     }
 
@@ -377,6 +459,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (draggedNoteId) {
       onMoveNoteToFolder?.(draggedNoteId, null);
       setDraggedNoteId(null);
+    }
+    if (draggedFolderId) {
+      onMoveFolderToParent?.(draggedFolderId, null);
+      setDraggedFolderId(null);
     }
     setIsDragOverRootZone(false);
   };
@@ -509,8 +595,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleCreateFolderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newFolderName.trim()) {
-      onCreateFolder(newFolderName.trim());
+      onCreateFolder(newFolderName.trim(), newFolderParentId);
       setNewFolderName('');
+      setNewFolderParentId(null);
       setIsCreatingFolder(false);
     }
   };
@@ -629,9 +716,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Top Quick Navigation: Agenda & Recent Notes */}
+        {/* Top Quick Navigation: Agenda, Canvas, Recent, Graph */}
         <div className="grid grid-cols-2 gap-1.5">
-          {onOpenAgenda ? (
+          {onOpenAgenda && (
             <button
               id="btn-sidebar-open-agenda"
               type="button"
@@ -655,10 +742,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Daily
               </span>
             </button>
-          ) : (
-            <div />
           )}
 
+          {onOpenCanvas && (
+            <button
+              id="btn-sidebar-open-canvas"
+              type="button"
+              onClick={onOpenCanvas}
+              className={`flex items-center justify-between py-1.5 px-2 rounded-[6px] text-xs font-medium transition-all duration-150 cursor-pointer active:scale-98 border ${
+                isCanvasActive
+                  ? 'bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] border-[#ec4899] shadow-xs hover:shadow-[0_0_10px_rgba(236,72,153,0.3)]'
+                  : 'bg-[#1f1338] hover:bg-[#281745] border-[#2e1c52] text-[#faf5ff] hover:border-[#ec4899]/60'
+              }`}
+              title="Open Infinite Visual Canvas & Whiteboard"
+            >
+              <div className="flex items-center gap-1.5 truncate">
+                <Boxes className={`w-3.5 h-3.5 shrink-0 ${isCanvasActive ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                <span className="font-semibold truncate">Canvas</span>
+              </div>
+              <span
+                className={`text-[9px] font-mono px-1 py-0.2 rounded ${
+                  isCanvasActive ? 'bg-[#150d24]/50 text-white' : 'bg-[#150d24] text-[#c084fc]'
+                }`}
+              >
+                Board
+              </span>
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-1.5">
           <button
             id="btn-sidebar-recent-notes-toggle"
             type="button"
@@ -676,6 +789,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#150d24] text-[#c084fc] font-semibold">
               {recentNotes.length}
+            </span>
+          </button>
+
+          <button
+            id="btn-sidebar-open-full-graph"
+            type="button"
+            onClick={onOpenFullGraph}
+            className="flex items-center justify-between py-1.5 px-2 rounded-[6px] text-xs font-medium transition-all duration-150 cursor-pointer active:scale-98 border bg-[#1f1338] hover:bg-[#281745] border-[#2e1c52] text-[#faf5ff] hover:border-[#ec4899]/60"
+            title="Open 3D/2D Knowledge Graph"
+          >
+            <div className="flex items-center gap-1.5 truncate">
+              <Network className="w-3.5 h-3.5 text-[#ec4899] shrink-0" />
+              <span className="font-semibold truncate">Graph</span>
+            </div>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#150d24] text-[#c084fc] font-semibold">
+              2D
             </span>
           </button>
         </div>
@@ -708,7 +837,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* New Folder Inline Form */}
       {isCreatingFolder && (
-        <form onSubmit={handleCreateFolderSubmit} className="p-2 border-b border-[#2e1c52] bg-[#1f1338]">
+        <form onSubmit={handleCreateFolderSubmit} className="p-2 border-b border-[#2e1c52] bg-[#1f1338] space-y-1.5">
           <div className="flex items-center gap-1">
             <input
               type="text"
@@ -716,7 +845,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               placeholder="Directory name..."
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              className="flex-1 px-2 py-1 text-xs rounded-[6px] bg-[#150d24] border-[#2e1c52] text-[#faf5ff] focus:outline-none focus:border-[#ec4899]"
+              className="flex-1 px-2 py-1 text-xs rounded-[6px] bg-[#150d24] border border-[#2e1c52] text-[#faf5ff] focus:outline-none focus:border-[#ec4899]"
             />
             <button
               type="submit"
@@ -727,12 +856,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setIsCreatingFolder(false)}
+              onClick={() => {
+                setIsCreatingFolder(false);
+                setNewFolderName('');
+                setNewFolderParentId(null);
+              }}
               className="p-1 text-[#c084fc] hover:text-[#faf5ff] cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {folders.length > 0 && (
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="text-[#c084fc]/70 font-mono text-[10px]">Location:</span>
+              <select
+                value={newFolderParentId || ''}
+                onChange={(e) => setNewFolderParentId(e.target.value || null)}
+                className="flex-1 px-1.5 py-0.5 text-[11px] bg-[#150d24] border border-[#2e1c52] rounded-[4px] text-[#faf5ff] focus:outline-none focus:border-[#ec4899] cursor-pointer truncate"
+              >
+                <option value="">/ Root (Top Level)</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {getFolderPath(f.id)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </form>
       )}
 
@@ -911,8 +1062,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {recentNotes.length > 0 ? (
                     recentNotes.map((note) => {
                       const isActive = note.id === activeNoteId;
-                      const folder = folders.find((f) => f.id === note.folderId);
-                      const folderName = folder ? folder.name : 'Root';
+                      const folderName = getFolderPath(note.folderId);
                       const relativeTime = formatRelativeTime(note.updatedAt || note.createdAt);
 
                       return (
@@ -1086,364 +1236,506 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="space-y-1">
-            {/* Folders List */}
-            {folders.map((folder, folderIdx) => {
-              const folderNotes = filteredNotes.filter((n) => n.folderId === folder.id);
-              const isCollapsed = !!collapsedFolders[folder.id];
-              const isEditing = editingFolderId === folder.id;
-              const isBeingDragged = draggedFolderId === folder.id;
-              const isDropTargetFolder =
-                draggedFolderId &&
-                dragOverFolderId === folder.id &&
-                draggedFolderId !== folder.id;
-              const isNoteTargetContainer =
-                draggedNoteId && dragOverFolderAsTargetId === folder.id;
+            {/* Hierarchical Recursive Directory Tree */}
+            {(() => {
+              const renderFolderNode = (
+                folder: Folder,
+                depth: number,
+                folderIdx: number,
+                totalSiblings: number
+              ): React.ReactNode => {
+                const folderNotes = filteredNotes.filter((n) => n.folderId === folder.id);
+                const childFolders = getChildFolders(folder.id);
+                const isCollapsed = !!collapsedFolders[folder.id];
+                const isEditing = editingFolderId === folder.id;
+                const isBeingDragged = draggedFolderId === folder.id;
+                const isDropTargetFolder =
+                  draggedFolderId &&
+                  dragOverFolderId === folder.id &&
+                  draggedFolderId !== folder.id;
+                const isNoteTargetContainer =
+                  draggedNoteId && dragOverFolderAsTargetId === folder.id;
+                const isFolderDropInside = isDropTargetFolder && folderDropPosition === 'inside';
 
-              return (
-                <div
-                  key={folder.id}
-                  className="space-y-0.5 relative"
-                  onDragOver={(e) => handleFolderDragOver(e, folder.id)}
-                  onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
-                  onDrop={(e) => handleFolderDrop(e, folder.id)}
-                >
-                  {/* Drop Indicator Lines for Folder Reordering */}
-                  {isDropTargetFolder && folderDropPosition === 'before' && (
-                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#ec4899] shadow-[0_0_8px_#ec4899] z-20 pointer-events-none rounded-full flex items-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#ec4899] -ml-0.5" />
-                    </div>
-                  )}
-                  {isDropTargetFolder && folderDropPosition === 'after' && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#ec4899] shadow-[0_0_8px_#ec4899] z-20 pointer-events-none rounded-full flex items-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#ec4899] -ml-0.5" />
-                    </div>
-                  )}
-
-                  {/* Folder Header Row */}
+                return (
                   <div
-                    draggable={!isEditing}
-                    onDragStart={(e) => handleFolderDragStart(e, folder.id)}
-                    onDragEnd={handleDragEnd}
-                    className={`group relative flex items-center justify-between px-2 py-1.5 rounded-[6px] transition-all duration-150 select-none cursor-pointer ${
-                      isBeingDragged ? 'opacity-30' : ''
-                    } ${
-                      isNoteTargetContainer
-                        ? 'ring-2 ring-[#ec4899] bg-[#ec4899]/20 shadow-[0_0_12px_rgba(236,72,153,0.35)] border-[#ec4899]'
-                        : 'hover:bg-[#251543] border-transparent hover:border-[#3b2366]'
-                    }`}
+                    key={folder.id}
+                    className="space-y-0.5 relative"
+                    onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                    onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
+                    onDrop={(e) => handleFolderDrop(e, folder.id)}
                   >
+                    {/* Drop Indicator Lines for Folder Reordering */}
+                    {isDropTargetFolder && folderDropPosition === 'before' && (
+                      <div
+                        style={{ left: `${depth * 14}px` }}
+                        className="absolute top-0 right-0 h-0.5 bg-[#ec4899] shadow-[0_0_8px_#ec4899] z-20 pointer-events-none rounded-full flex items-center"
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#ec4899] -ml-0.5" />
+                      </div>
+                    )}
+                    {isDropTargetFolder && folderDropPosition === 'after' && (
+                      <div
+                        style={{ left: `${depth * 14}px` }}
+                        className="absolute bottom-0 right-0 h-0.5 bg-[#ec4899] shadow-[0_0_8px_#ec4899] z-20 pointer-events-none rounded-full flex items-center"
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#ec4899] -ml-0.5" />
+                      </div>
+                    )}
+
+                    {/* Folder Header Row */}
                     <div
-                      className="flex items-center gap-1.5 flex-1 min-w-0"
-                      onClick={() => toggleFolder(folder.id)}
+                      draggable={!isEditing}
+                      onDragStart={(e) => handleFolderDragStart(e, folder.id)}
+                      onDragEnd={handleDragEnd}
+                      style={{ paddingLeft: `${depth * 14 + 6}px` }}
+                      className={`group relative flex items-center justify-between pr-2 py-1.5 rounded-[6px] transition-all duration-150 select-none cursor-pointer ${
+                        isBeingDragged ? 'opacity-30' : ''
+                      } ${
+                        isNoteTargetContainer || isFolderDropInside
+                          ? 'ring-2 ring-[#ec4899] bg-[#ec4899]/20 shadow-[0_0_12px_rgba(236,72,153,0.35)] border-[#ec4899]'
+                          : 'hover:bg-[#251543] border-transparent hover:border-[#3b2366]'
+                      }`}
                     >
-                      {isCollapsed ? (
-                        <ChevronRight className="w-3.5 h-3.5 text-[#c084fc] shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-[#c084fc] shrink-0" />
-                      )}
-                      <span
-                        onClick={(e) => {
-                          if (onCustomizeFolderIcon) {
-                            e.stopPropagation();
-                            onCustomizeFolderIcon(folder);
-                          }
-                        }}
-                        className="hover:scale-110 transition-transform cursor-pointer p-0.5 rounded hover:bg-[#2e1c52]"
-                        title="Click to customize directory icon & color"
+                      <div
+                        className="flex items-center gap-1.5 flex-1 min-w-0"
+                        onClick={() => toggleFolder(folder.id)}
                       >
-                        <CustomIconRenderer
-                          iconName={folder.icon}
-                          color={folder.iconColor || '#ec4899'}
-                          defaultIcon={isCollapsed ? FolderIcon : FolderOpen}
-                          className="w-3.5 h-3.5 shrink-0"
-                        />
-                      </span>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          autoFocus
-                          value={editingFolderName}
-                          onChange={(e) => setEditingFolderName(e.target.value)}
-                          onBlur={() => handleRenameFolderSubmit(folder.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRenameFolderSubmit(folder.id);
-                            if (e.key === 'Escape') setEditingFolderId(null);
+                        {isCollapsed ? (
+                          <ChevronRight className="w-3.5 h-3.5 text-[#c084fc] shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-[#c084fc] shrink-0" />
+                        )}
+                        <span
+                          onClick={(e) => {
+                            if (onCustomizeFolderIcon) {
+                              e.stopPropagation();
+                              onCustomizeFolderIcon(folder);
+                            }
                           }}
-                          className="px-1 py-0.5 text-xs bg-[#1f1338] border-[#2e1c52] rounded-[4px] flex-1 focus:outline-none focus:border-[#ec4899] text-[#faf5ff]"
-                        />
-                      ) : (
-                        <span className="font-medium text-[#faf5ff] truncate">
-                          {folder.name}
+                          className="hover:scale-110 transition-transform cursor-pointer p-0.5 rounded hover:bg-[#2e1c52]"
+                          title="Click to customize directory icon & color"
+                        >
+                          <CustomIconRenderer
+                            iconName={folder.icon}
+                            color={folder.iconColor || '#ec4899'}
+                            defaultIcon={isCollapsed ? FolderIcon : FolderOpen}
+                            className="w-3.5 h-3.5 shrink-0"
+                          />
                         </span>
-                      )}
-                      <span className="text-[10px] text-[#c084fc] ml-1 font-['Space_Mono',monospace]">
-                        ({folderNotes.length})
-                      </span>
-
-                      {isNoteTargetContainer && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#ec4899] text-white font-mono shrink-0 ml-1">
-                          Drop to move
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingFolderName}
+                            onChange={(e) => setEditingFolderName(e.target.value)}
+                            onBlur={() => handleRenameFolderSubmit(folder.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRenameFolderSubmit(folder.id);
+                              if (e.key === 'Escape') setEditingFolderId(null);
+                            }}
+                            className="px-1 py-0.5 text-xs bg-[#1f1338] border-[#2e1c52] rounded-[4px] flex-1 focus:outline-none focus:border-[#ec4899] text-[#faf5ff]"
+                          />
+                        ) : (
+                          <span className="font-medium text-[#faf5ff] truncate">
+                            {folder.name}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-[#c084fc] ml-1 font-['Space_Mono',monospace]">
+                          ({folderNotes.length})
                         </span>
-                      )}
-                    </div>
+                        {childFolders.length > 0 && (
+                          <span
+                            className="text-[9px] text-[#c084fc]/60 font-['Space_Mono',monospace] px-1 py-0.2 rounded bg-[#1f1338] border border-[#2e1c52]/60 ml-0.5"
+                            title={`${childFolders.length} subdirector${childFolders.length === 1 ? 'y' : 'ies'}`}
+                          >
+                            {childFolders.length} sub
+                          </span>
+                        )}
 
-                    {/* Folder Actions Overlay on Hover (floating on top of directory row) */}
-                    <div className="absolute right-1 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto flex items-center gap-0.5 bg-[#150d24]/95 backdrop-blur-xs border-[#3b2366] rounded-[6px] px-1 py-0.5 shadow-lg transition-opacity">
-                      {/* Move Up Directory */}
-                      <button
-                        type="button"
-                        disabled={folderIdx === 0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onMoveFolder?.(folder.id, 'up');
-                          setActiveSortPreset('custom');
-                        }}
-                        className={`p-1 rounded-[4px] transition-colors cursor-pointer ${
-                          folderIdx === 0
-                            ? 'text-[#c084fc]/20 cursor-not-allowed'
-                            : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52]'
-                        }`}
-                        title={folderIdx === 0 ? 'Already at top' : 'Move directory up'}
-                      >
-                        <ChevronUp className="w-3 h-3" />
-                      </button>
+                        {isNoteTargetContainer && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#ec4899] text-white font-mono shrink-0 ml-1">
+                            Drop note
+                          </span>
+                        )}
 
-                      {/* Move Down Directory */}
-                      <button
-                        type="button"
-                        disabled={folderIdx === folders.length - 1}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onMoveFolder?.(folder.id, 'down');
-                          setActiveSortPreset('custom');
-                        }}
-                        className={`p-1 rounded-[4px] transition-colors cursor-pointer ${
-                          folderIdx === folders.length - 1
-                            ? 'text-[#c084fc]/20 cursor-not-allowed'
-                            : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52]'
-                        }`}
-                        title={
-                          folderIdx === folders.length - 1
-                            ? 'Already at bottom'
-                            : 'Move directory down'
-                        }
-                      >
-                        <ChevronDown className="w-3 h-3" />
-                      </button>
+                        {isFolderDropInside && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#ec4899] text-white font-mono shrink-0 ml-1">
+                            Nest inside
+                          </span>
+                        )}
+                      </div>
 
-                      {onCustomizeFolderIcon && (
+                      {/* Folder Actions Overlay on Hover */}
+                      <div className="absolute right-1 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto flex items-center gap-0.5 bg-[#150d24]/95 backdrop-blur-xs border border-[#3b2366] rounded-[6px] px-1 py-0.5 shadow-lg transition-opacity">
+                        {/* Move Up Directory */}
+                        <button
+                          type="button"
+                          disabled={folderIdx === 0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMoveFolder?.(folder.id, 'up');
+                            setActiveSortPreset('custom');
+                          }}
+                          className={`p-1 rounded-[4px] transition-colors cursor-pointer ${
+                            folderIdx === 0
+                              ? 'text-[#c084fc]/20 cursor-not-allowed'
+                              : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52]'
+                          }`}
+                          title={folderIdx === 0 ? 'Already at top' : 'Move directory up'}
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                        </button>
+
+                        {/* Move Down Directory */}
+                        <button
+                          type="button"
+                          disabled={folderIdx === totalSiblings - 1}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMoveFolder?.(folder.id, 'down');
+                            setActiveSortPreset('custom');
+                          }}
+                          className={`p-1 rounded-[4px] transition-colors cursor-pointer ${
+                            folderIdx === totalSiblings - 1
+                              ? 'text-[#c084fc]/20 cursor-not-allowed'
+                              : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52]'
+                          }`}
+                          title={
+                            folderIdx === totalSiblings - 1
+                              ? 'Already at bottom'
+                              : 'Move directory down'
+                          }
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+
+                        {/* Create Subdirectory inside this directory */}
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onCustomizeFolderIcon(folder);
+                            setCollapsedFolders((prev) => ({ ...prev, [folder.id]: false }));
+                            setCreatingSubfolderParentId(folder.id);
+                            setNewSubfolderName('');
+                          }}
+                          className="p-1 text-[#c084fc] hover:text-[#ec4899] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
+                          title={`Create subdirectory inside "${folder.name}"`}
+                        >
+                          <FolderPlus className="w-3 h-3" />
+                        </button>
+
+                        {/* Create Note inside this directory */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCreateNote(folder.id);
                           }}
                           className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
-                          title="Customize directory icon, colors, or upload an .svg"
+                          title={`Create note in ${folder.name}`}
                         >
-                          <Sparkles className="w-3 h-3" />
+                          <FilePlus className="w-3 h-3" />
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCreateNote(folder.id);
-                        }}
-                        className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
-                        title={`Create note in ${folder.name}`}
-                      >
-                        <FilePlus className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingFolderId(folder.id);
-                          setEditingFolderName(folder.name);
-                        }}
-                        className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
-                        title="Rename directory"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (
-                            window.confirm(
-                              `Delete folder "${folder.name}"? Notes inside will be moved to root.`
-                            )
-                          ) {
-                            onDeleteFolder(folder.id);
-                          }
-                        }}
-                        className="p-1 text-[#c084fc] hover:text-rose-400 hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
-                        title="Delete directory"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* Folder Notes Subtree */}
-                  {!isCollapsed && (
-                    <div className="pl-3.5 space-y-0.5 border-l border-[#2e1c52] ml-3">
-                      {folderNotes.map((note, noteIdx) => {
-                        const isActive = note.id === activeNoteId;
-                        const isBeingDragged = draggedNoteId === note.id;
-                        const isDropTargetNote =
-                          draggedNoteId &&
-                          dragOverNoteId === note.id &&
-                          draggedNoteId !== note.id;
-
-                        return (
-                          <div
-                            key={note.id}
-                            draggable={true}
-                            onDragStart={(e) => handleNoteDragStart(e, note.id)}
-                            onDragOver={(e) => handleNoteDragOver(e, note.id)}
-                            onDragLeave={(e) => handleNoteDragLeave(e, note.id)}
-                            onDrop={(e) => handleNoteDrop(e, note.id)}
-                            onDragEnd={handleDragEnd}
-                            className={`group/note relative flex items-center justify-between rounded-[6px] transition-all select-none ${
-                              isBeingDragged ? 'opacity-30' : ''
-                            }`}
+                        {/* Move Directory to another location */}
+                        {onMoveFolderToParent && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMoveFolderTarget(folder);
+                            }}
+                            className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
+                            title={`Move directory "${folder.name}" to another parent...`}
                           >
-                            {/* Drop Indicator Lines for Note Reordering */}
-                            {isDropTargetNote && noteDropPosition === 'before' && (
-                              <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#38bdf8] shadow-[0_0_8px_#38bdf8] z-20 pointer-events-none rounded-full flex items-center">
-                                <div className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] -ml-0.5" />
-                              </div>
-                            )}
-                            {isDropTargetNote && noteDropPosition === 'after' && (
-                              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#38bdf8] shadow-[0_0_8px_#38bdf8] z-20 pointer-events-none rounded-full flex items-center">
-                                <div className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] -ml-0.5" />
-                              </div>
-                            )}
+                            <FolderInput className="w-3 h-3" />
+                          </button>
+                        )}
 
-                            {/* Note button taking the full width as before the change */}
-                            <button
-                              id={`sidebar-note-${note.id}`}
-                              type="button"
-                              onClick={() => onSelectNote(note.id)}
-                              className={`w-full text-left px-2 py-1.5 rounded-[6px] flex items-center justify-between gap-1.5 transition-all duration-150 cursor-pointer active:scale-[0.99] ${
-                                isActive
-                                  ? 'bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] font-semibold shadow-xs hover:shadow-[0_0_10px_rgba(236,72,153,0.3)] border-[#ec4899]'
-                                  : 'text-[#faf5ff]/85 hover:text-[#faf5ff] hover:bg-[#251543] border-transparent hover:border-[#3b2366]'
+                        {/* Rename Directory */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingFolderId(folder.id);
+                            setEditingFolderName(folder.name);
+                          }}
+                          className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
+                          title="Rename directory"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+
+                        {/* Customize Icon */}
+                        {onCustomizeFolderIcon && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCustomizeFolderIcon(folder);
+                            }}
+                            className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
+                            title="Customize directory icon, colors, or upload an .svg"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                          </button>
+                        )}
+
+                        {/* Delete Directory */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (
+                              window.confirm(
+                                `Delete directory "${folder.name}" and all subdirectories? Notes inside will be moved to root.`
+                              )
+                            ) {
+                              onDeleteFolder(folder.id);
+                            }
+                          }}
+                          className="p-1 text-[#c084fc] hover:text-rose-400 hover:bg-[#2e1c52] rounded-[4px] cursor-pointer"
+                          title="Delete directory"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Folder Subtree (Subdirectories + Notes) */}
+                    {!isCollapsed && (
+                      <div
+                        style={{ marginLeft: `${depth * 14 + 14}px` }}
+                        className="pl-2 space-y-0.5 border-l border-[#2e1c52]/70 my-0.5"
+                      >
+                        {/* Inline Subdirectory Creation Form */}
+                        {creatingSubfolderParentId === folder.id && (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (newSubfolderName.trim()) {
+                                onCreateFolder(newSubfolderName.trim(), folder.id);
+                                setNewSubfolderName('');
+                                setCreatingSubfolderParentId(null);
+                              }
+                            }}
+                            className="py-1 pr-1"
+                          >
+                            <div className="flex items-center gap-1 bg-[#1f1338] p-1 rounded-[6px] border border-[#ec4899]/60 shadow-xs">
+                              <FolderPlus className="w-3.5 h-3.5 text-[#ec4899] shrink-0 ml-0.5" />
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder={`Subdirectory in ${folder.name}...`}
+                                value={newSubfolderName}
+                                onChange={(e) => setNewSubfolderName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    setCreatingSubfolderParentId(null);
+                                    setNewSubfolderName('');
+                                  }
+                                }}
+                                className="flex-1 px-1.5 py-0.5 text-xs bg-[#150d24] border border-[#2e1c52] rounded-[4px] text-[#faf5ff] focus:outline-none focus:border-[#ec4899]"
+                              />
+                              <button
+                                type="submit"
+                                className="px-2 py-0.5 text-[10px] bg-[#ec4899] hover:bg-[#db2777] text-white rounded-[4px] font-semibold cursor-pointer"
+                              >
+                                Add
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCreatingSubfolderParentId(null);
+                                  setNewSubfolderName('');
+                                }}
+                                className="p-0.5 text-[#c084fc] hover:text-[#faf5ff] cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </form>
+                        )}
+
+                        {/* Child Directories */}
+                        {childFolders.map((child, childIdx) =>
+                          renderFolderNode(child, depth + 1, childIdx, childFolders.length)
+                        )}
+
+                        {/* Directory Notes */}
+                        {folderNotes.map((note, noteIdx) => {
+                          const isActive = note.id === activeNoteId;
+                          const isBeingDragged = draggedNoteId === note.id;
+                          const isDropTargetNote =
+                            draggedNoteId &&
+                            dragOverNoteId === note.id &&
+                            draggedNoteId !== note.id;
+
+                          return (
+                            <div
+                              key={note.id}
+                              draggable={true}
+                              onDragStart={(e) => handleNoteDragStart(e, note.id)}
+                              onDragOver={(e) => handleNoteDragOver(e, note.id)}
+                              onDragLeave={(e) => handleNoteDragLeave(e, note.id)}
+                              onDrop={(e) => handleNoteDrop(e, note.id)}
+                              onDragEnd={handleDragEnd}
+                              className={`group/note relative flex items-center justify-between rounded-[6px] transition-all select-none ${
+                                isBeingDragged ? 'opacity-30' : ''
                               }`}
                             >
-                              <div className="flex items-center gap-2 truncate">
-                                <CustomIconRenderer
-                                  iconName={note.icon}
-                                  color={
-                                    isActive ? '#faf5ff' : note.iconColor || '#c084fc'
+                              {/* Drop Indicator Lines for Note Reordering */}
+                              {isDropTargetNote && noteDropPosition === 'before' && (
+                                <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#38bdf8] shadow-[0_0_8px_#38bdf8] z-20 pointer-events-none rounded-full flex items-center">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] -ml-0.5" />
+                                </div>
+                              )}
+                              {isDropTargetNote && noteDropPosition === 'after' && (
+                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#38bdf8] shadow-[0_0_8px_#38bdf8] z-20 pointer-events-none rounded-full flex items-center">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] -ml-0.5" />
+                                </div>
+                              )}
+
+                              {/* Note button */}
+                              <button
+                                id={`sidebar-note-${note.id}`}
+                                type="button"
+                                onClick={() => onSelectNote(note.id)}
+                                className={`w-full text-left px-2 py-1.5 rounded-[6px] flex items-center justify-between gap-1.5 transition-all duration-150 cursor-pointer active:scale-[0.99] ${
+                                  isActive
+                                    ? 'bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] font-semibold shadow-xs hover:shadow-[0_0_10px_rgba(236,72,153,0.3)] border-[#ec4899]'
+                                    : 'text-[#faf5ff]/85 hover:text-[#faf5ff] hover:bg-[#251543] border-transparent hover:border-[#3b2366]'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  <CustomIconRenderer
+                                    iconName={note.icon}
+                                    color={
+                                      isActive ? '#faf5ff' : note.iconColor || '#c084fc'
+                                    }
+                                    defaultIcon={FileCode}
+                                    className="w-3.5 h-3.5 shrink-0"
+                                  />
+                                  <span className="truncate">
+                                    <HighlightedText text={note.title || note.name.replace(/\.(md|mf)$/i, '')} query={searchQuery} />
+                                  </span>
+                                </div>
+                              </button>
+
+                              {/* Move up, move down, move note to another directory on hover */}
+                              <div className="absolute right-1 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover/note:opacity-100 pointer-events-none group-hover/note:pointer-events-auto flex items-center gap-0.5 bg-[#150d24]/95 backdrop-blur-xs border border-[#3b2366] rounded-[6px] px-1 py-0.5 shadow-lg transition-opacity">
+                                {/* Move Up */}
+                                <button
+                                  type="button"
+                                  disabled={noteIdx === 0}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMoveNote?.(note.id, 'up');
+                                    setActiveSortPreset('custom');
+                                  }}
+                                  className={`p-1 rounded-[4px] transition-all cursor-pointer ${
+                                    noteIdx === 0
+                                      ? 'text-[#c084fc]/20 cursor-not-allowed'
+                                      : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95'
+                                  }`}
+                                  title={noteIdx === 0 ? 'Top of folder' : 'Move note up'}
+                                >
+                                  <ChevronUp className="w-3 h-3" />
+                                </button>
+
+                                {/* Move Down */}
+                                <button
+                                  type="button"
+                                  disabled={noteIdx === folderNotes.length - 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMoveNote?.(note.id, 'down');
+                                    setActiveSortPreset('custom');
+                                  }}
+                                  className={`p-1 rounded-[4px] transition-all cursor-pointer ${
+                                    noteIdx === folderNotes.length - 1
+                                      ? 'text-[#c084fc]/20 cursor-not-allowed'
+                                      : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95'
+                                  }`}
+                                  title={
+                                    noteIdx === folderNotes.length - 1
+                                      ? 'Bottom of folder'
+                                      : 'Move note down'
                                   }
-                                  defaultIcon={FileCode}
-                                  className="w-3.5 h-3.5 shrink-0"
-                                />
-                                <span className="truncate">
-                                  <HighlightedText text={note.title || note.name.replace(/\.(md|mf)$/i, '')} query={searchQuery} />
-                                </span>
-                              </div>
-                            </button>
+                                >
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
 
-                            {/* Move up, move down, move note to another directory on top of the note name on hover */}
-                            <div className="absolute right-1 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover/note:opacity-100 pointer-events-none group-hover/note:pointer-events-auto flex items-center gap-0.5 bg-[#150d24]/95 backdrop-blur-xs border-[#3b2366] rounded-[6px] px-1 py-0.5 shadow-lg transition-opacity">
-                              {/* Move Up */}
-                              <button
-                                type="button"
-                                disabled={noteIdx === 0}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onMoveNote?.(note.id, 'up');
-                                  setActiveSortPreset('custom');
-                                }}
-                                className={`p-1 rounded-[4px] transition-all cursor-pointer ${
-                                  noteIdx === 0
-                                    ? 'text-[#c084fc]/20 cursor-not-allowed'
-                                    : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95'
-                                }`}
-                                title={noteIdx === 0 ? 'Top of folder' : 'Move note up'}
-                              >
-                                <ChevronUp className="w-3 h-3" />
-                              </button>
-
-                              {/* Move Down */}
-                              <button
-                                type="button"
-                                disabled={noteIdx === folderNotes.length - 1}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onMoveNote?.(note.id, 'down');
-                                  setActiveSortPreset('custom');
-                                }}
-                                className={`p-1 rounded-[4px] transition-all cursor-pointer ${
-                                  noteIdx === folderNotes.length - 1
-                                    ? 'text-[#c084fc]/20 cursor-not-allowed'
-                                    : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95'
-                                }`}
-                                title={
-                                  noteIdx === folderNotes.length - 1
-                                    ? 'Bottom of folder'
-                                    : 'Move note down'
-                                }
-                              >
-                                <ChevronDown className="w-3 h-3" />
-                              </button>
-
-                              {/* Move note to another directory */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setMoveNoteTarget(note);
-                                }}
-                                className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95 rounded-[4px] transition-all cursor-pointer"
-                                title="Move note to another directory..."
-                              >
-                                <FolderInput className="w-3 h-3" />
-                              </button>
-
-                              {onCustomizeNoteIcon && (
+                                {/* Move note to another directory */}
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onCustomizeNoteIcon(note);
+                                    setMoveNoteTarget(note);
                                   }}
                                   className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95 rounded-[4px] transition-all cursor-pointer"
-                                  title="Customize note icon, colors, or upload an .svg"
+                                  title="Move note to another directory..."
                                 >
-                                  <Sparkles className="w-3 h-3" />
+                                  <FolderInput className="w-3 h-3" />
                                 </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
 
-                      {folderNotes.length === 0 && (
-                        <div
-                          onDragOver={(e) => handleFolderDragOver(e, folder.id)}
-                          onDrop={(e) => handleFolderDrop(e, folder.id)}
-                          className={`px-2 py-1.5 text-[10px] rounded border-dashed transition-all ${
-                            isNoteTargetContainer
-                              ? 'border-[#ec4899] text-[#ec4899] bg-[#ec4899]/15'
-                              : 'border-[#2e1c52]/60 text-[#c084fc]/40 italic'
-                          }`}
-                        >
-                          {isNoteTargetContainer
-                            ? 'Drop note here to add to directory'
-                            : 'Empty directory (drag notes here)'}
-                        </div>
-                      )}
+                                {onCustomizeNoteIcon && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onCustomizeNoteIcon(note);
+                                    }}
+                                    className="p-1 text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#341d5a] hover:scale-105 active:scale-95 rounded-[4px] transition-all cursor-pointer"
+                                    title="Customize note icon, colors, or upload an .svg"
+                                  >
+                                    <Sparkles className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Empty state inside directory */}
+                        {childFolders.length === 0 && folderNotes.length === 0 && creatingSubfolderParentId !== folder.id && (
+                          <div
+                            onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                            onDrop={(e) => handleFolderDrop(e, folder.id)}
+                            className={`px-2 py-1.5 text-[10px] rounded border-dashed transition-all ${
+                              isNoteTargetContainer || isFolderDropInside
+                                ? 'border-[#ec4899] text-[#ec4899] bg-[#ec4899]/15'
+                                : 'border-[#2e1c52]/60 text-[#c084fc]/40 italic'
+                            }`}
+                          >
+                            {isNoteTargetContainer
+                              ? 'Drop note here to add to directory'
+                              : isFolderDropInside
+                              ? 'Drop directory here to nest inside'
+                              : 'Empty directory (add note or subdirectory)'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              const rootFolders = getChildFolders(null);
+              return (
+                <>
+                  {rootFolders.map((rootFolder, idx) =>
+                    renderFolderNode(rootFolder, 0, idx, rootFolders.length)
+                  )}
+                  {folders.length === 0 && (
+                    <div className="px-2 py-2 text-[10px] text-[#c084fc]/50 italic text-center border-dashed border-[#2e1c52]/60 rounded">
+                      No directories yet. Click "New Dir" to create one.
                     </div>
                   )}
-                </div>
+                </>
               );
-            })}
+            })()}
           </div>
         </div>
 
@@ -1899,12 +2191,111 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         defaultIcon={FolderIcon}
                         className="w-3.5 h-3.5 shrink-0"
                       />
-                      <span className="truncate">{f.name}</span>
+                      <span className="truncate">{getFolderPath(f.id)}</span>
                     </span>
                     {isCurrent && <Check className="w-3.5 h-3.5 text-[#ec4899]" />}
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Move Directory to Another Parent Modal */}
+      {moveFolderTarget && (
+        <div
+          id="modal-move-folder-directory"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
+          onClick={() => setMoveFolderTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-[#150d24] border border-[#3b2366] rounded-xl shadow-2xl p-4 text-[#faf5ff] font-['Space_Grotesk',sans-serif]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#2e1c52] pb-2.5 mb-3">
+              <div className="flex items-center gap-2">
+                <FolderInput className="w-4 h-4 text-[#ec4899]" />
+                <h3 className="font-semibold text-sm text-[#faf5ff]">
+                  Move Directory
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMoveFolderTarget(null)}
+                className="p-1 text-[#c084fc] hover:text-[#faf5ff] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#c084fc] mb-3">
+              Select destination location for directory{' '}
+              <span className="font-semibold text-[#faf5ff]">
+                "{moveFolderTarget.name}"
+              </span>
+              :
+            </p>
+
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+              {/* Root option */}
+              <button
+                type="button"
+                onClick={() => {
+                  onMoveFolderToParent?.(moveFolderTarget.id, null);
+                  setMoveFolderTarget(null);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer border ${
+                  !moveFolderTarget.parentId
+                    ? 'bg-[#ec4899]/20 border-[#ec4899] text-[#faf5ff] font-medium'
+                    : 'bg-[#1f1338] border-[#2e1c52] text-[#faf5ff]/80 hover:bg-[#2e1c52] hover:text-[#faf5ff]'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="font-mono text-[#c084fc]">/</span>
+                  <span>Root (Top Level)</span>
+                </span>
+                {!moveFolderTarget.parentId && (
+                  <Check className="w-3.5 h-3.5 text-[#ec4899]" />
+                )}
+              </button>
+
+              {/* Folders list excluding itself and its descendants */}
+              {folders
+                .filter(
+                  (f) =>
+                    f.id !== moveFolderTarget.id &&
+                    !isFolderDescendant(f.id, moveFolderTarget.id)
+                )
+                .map((f) => {
+                  const isCurrent = moveFolderTarget.parentId === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => {
+                        onMoveFolderToParent?.(moveFolderTarget.id, f.id);
+                        setMoveFolderTarget(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer border ${
+                        isCurrent
+                          ? 'bg-[#ec4899]/20 border-[#ec4899] text-[#faf5ff] font-medium'
+                          : 'bg-[#1f1338] border-[#2e1c52] text-[#faf5ff]/80 hover:bg-[#2e1c52] hover:text-[#faf5ff]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <CustomIconRenderer
+                          iconName={f.icon}
+                          color={f.iconColor || '#ec4899'}
+                          defaultIcon={FolderIcon}
+                          className="w-3.5 h-3.5 shrink-0"
+                        />
+                        <span className="truncate">{getFolderPath(f.id)}</span>
+                      </span>
+                      {isCurrent && <Check className="w-3.5 h-3.5 text-[#ec4899]" />}
+                    </button>
+                  );
+                })}
             </div>
           </div>
         </div>

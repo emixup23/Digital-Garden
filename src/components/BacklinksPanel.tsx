@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   HelpCircle,
   PanelRightClose,
+  Boxes,
 } from 'lucide-react';
 import { NoteFile, Folder, ThemeConfig } from '../types';
 import { findBacklinksForNote, findOutgoingLinks } from '../utils/parser';
@@ -23,6 +24,8 @@ interface BacklinksPanelProps {
   folders: Folder[];
   onNavigateToNote: (title: string) => void;
   onCreateNote: (title: string) => void;
+  onNavigateToCanvas?: (canvasIdentifier: string, targetCardId?: string) => void;
+  onCreateCanvas?: (canvasName: string) => void;
   onOpenFullGraph: () => void;
   theme?: ThemeConfig;
   onClose?: () => void;
@@ -34,6 +37,8 @@ export const BacklinksPanel: React.FC<BacklinksPanelProps> = ({
   folders,
   onNavigateToNote,
   onCreateNote,
+  onNavigateToCanvas,
+  onCreateCanvas,
   onOpenFullGraph,
   theme,
   onClose,
@@ -414,6 +419,7 @@ export const BacklinksPanel: React.FC<BacklinksPanelProps> = ({
                 {outgoing.map((link, idx) => {
                   const isReciprocal = backlinks.some((b) => b.sourceNoteId === link.targetNoteId);
                   const targetNote = allNotes.find((n) => n.id === link.targetNoteId);
+                  const isCanvas = !!link.isCanvas;
                   return (
                     <div
                       key={idx}
@@ -421,21 +427,38 @@ export const BacklinksPanel: React.FC<BacklinksPanelProps> = ({
                       className="flex items-center justify-between p-2 rounded-[6px] border border-[#2e1c52] bg-[#1f1338] hover:border-[#ec4899]/70 hover:bg-[#251543] transition-all duration-150"
                     >
                       <div className="flex items-center gap-1.5 truncate">
-                        <CustomIconRenderer
-                          iconName={targetNote?.icon}
-                          color={targetNote?.iconColor || (link.isExisting ? '#ec4899' : '#fcd34d')}
-                          defaultIcon={FileText}
-                          className="w-3.5 h-3.5 shrink-0"
-                        />
+                        {isCanvas ? (
+                          <Boxes className="w-3.5 h-3.5 text-[#ec4899] shrink-0" />
+                        ) : (
+                          <CustomIconRenderer
+                            iconName={targetNote?.icon}
+                            color={targetNote?.iconColor || (link.isExisting ? '#ec4899' : '#fcd34d')}
+                            defaultIcon={FileText}
+                            className="w-3.5 h-3.5 shrink-0"
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => {
-                            if (link.isExisting) onNavigateToNote(link.targetTitle);
-                            else onCreateNote(link.targetTitle);
+                            if (isCanvas) {
+                              if (link.isExisting) {
+                                onNavigateToCanvas?.(link.canvasId || link.targetTitle, link.targetCardId || undefined);
+                              } else {
+                                onCreateCanvas?.(link.targetTitle);
+                              }
+                            } else {
+                              if (link.isExisting) onNavigateToNote(link.targetTitle);
+                              else onCreateNote(link.targetTitle);
+                            }
                           }}
-                          className="font-medium text-[#faf5ff] hover:text-[#ec4899] hover:underline underline-offset-2 truncate text-left cursor-pointer transition-colors"
+                          className="font-medium text-[#faf5ff] hover:text-[#ec4899] hover:underline underline-offset-2 truncate text-left cursor-pointer transition-colors flex items-center gap-1.5"
                         >
-                          {link.targetTitle}
+                          <span className="truncate">{link.targetTitle}</span>
+                          {isCanvas && (
+                            <span className="text-[9px] font-mono text-[#ec4899] bg-[#ec4899]/20 border border-[#ec4899]/40 px-1 rounded-[3px] shrink-0">
+                              Canvas
+                            </span>
+                          )}
                         </button>
                       </div>
 
@@ -448,12 +471,18 @@ export const BacklinksPanel: React.FC<BacklinksPanelProps> = ({
                         {!link.isExisting && (
                           <button
                             type="button"
-                            onClick={() => onCreateNote(link.targetTitle)}
+                            onClick={() => {
+                              if (isCanvas) {
+                                onCreateCanvas?.(link.targetTitle);
+                              } else {
+                                onCreateNote(link.targetTitle);
+                              }
+                            }}
                             className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#faf5ff] bg-[#ec4899] hover:bg-[#db2777] hover:shadow-[0_0_8px_rgba(236,72,153,0.4)] active:scale-95 px-2 py-0.5 rounded-[6px] shadow transition-all duration-150 cursor-pointer"
-                            title="Create this note now"
+                            title={isCanvas ? 'Create this canvas whiteboard' : 'Create this note now'}
                           >
                             <Plus className="w-2.5 h-2.5 text-[#faf5ff]" />
-                            <span>Create Note</span>
+                            <span>{isCanvas ? 'Create Canvas' : 'Create Note'}</span>
                           </button>
                         )}
                       </div>

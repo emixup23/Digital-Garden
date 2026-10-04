@@ -14,13 +14,19 @@ import {
   AlertCircle,
   FileUp,
   CheckCheck,
-  ChevronDown,
-  ChevronUp,
+  Server,
+  Cloud,
+  Terminal,
+  Layers,
+  Sparkles,
+  Info,
 } from 'lucide-react';
 import {
   ICON_LIBRARY,
   ICON_CATEGORIES,
+  ICON_LIBRARIES,
   IconCategory,
+  IconLibraryId,
   PRESET_ICON_COLORS,
   CustomIconRenderer,
   isSvgMarkup,
@@ -42,33 +48,53 @@ interface IconPickerModalProps {
   onSave: (targetId: string, type: 'folder' | 'note', iconName: string | undefined, iconColor: string | undefined) => void;
 }
 
-// Preset sample SVGs for quick testing & inspiration
-const SAMPLE_SVGS: { name: string; label: string; svg: string }[] = [
+// Preset sample SVGs for quick testing & inspiration (including Linux Tux & Cloud Infra)
+const SAMPLE_SVGS: { name: string; label: string; library: string; svg: string }[] = [
   {
-    name: 'sparkle',
-    label: 'Sparkle Star',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>',
+    name: 'tux',
+    label: 'Linux Tux Penguin',
+    library: 'Linux',
+    svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9.5 2 8 3.5 8 6v4c-1.5.5-3 2-3 4.5 0 2 1.5 3 2.5 3.5-.2.8-.5 1.5-1.5 2-.5.3-.5.9 0 1.2 1.2.7 3 .8 4.5.3 1 .3 2 .3 3 0 1.5.5 3.3.4 4.5-.3.5-.3.5-.9 0-1.2-1-.5-1.3-1.2-1.5-2 1-.5 2.5-1.5 2.5-3.5 0-2.5-1.5-4-3-4.5V6c0-2.5-1.5-4-4-4zm-1.5 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm3 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>',
+  },
+  {
+    name: 'k8s_wheel',
+    label: 'Kubernetes Helm',
+    library: 'DevOps',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>',
+  },
+  {
+    name: 'cloud_cluster',
+    label: 'Cloud Server Rack',
+    library: 'Cloud',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><rect x="4" y="16" width="16" height="4" rx="1"/><line x1="8" y1="18" x2="8.01" y2="18"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+  },
+  {
+    name: 'terminal_root',
+    label: 'Root Shell Prompt',
+    library: 'SysAdmin',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
   },
   {
     name: 'atom',
-    label: 'Quantum Atom',
+    label: 'Quantum Node',
+    library: 'Science',
     svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(30 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(-30 12 12)"/></svg>',
   },
-  {
-    name: 'infinity',
-    label: 'Infinity Node',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.267-8-12.356-8-5.096 0-5.096 8 0 8 5.09 0 7.261-8 12.356-8z"/></svg>',
-  },
-  {
-    name: 'rocket',
-    label: 'Rocket Launch',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>',
-  },
-  {
-    name: 'shield',
-    label: 'Shield Vault',
-    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
-  },
+];
+
+const POPULAR_SEARCH_TAGS = [
+  { label: '🐧 Linux', query: 'linux' },
+  { label: 'Ubuntu', query: 'ubuntu' },
+  { label: 'Arch', query: 'arch' },
+  { label: 'Docker', query: 'docker' },
+  { label: 'K8s', query: 'k8s' },
+  { label: '☁️ AWS', query: 'aws' },
+  { label: 'GCP', query: 'gcp' },
+  { label: 'Azure', query: 'azure' },
+  { label: 'Nginx', query: 'nginx' },
+  { label: 'Postgres', query: 'postgres' },
+  { label: 'WireGuard', query: 'wireguard' },
+  { label: 'Redis', query: 'redis' },
 ];
 
 function extractSvgMetrics(svg: string): { viewBox?: string; dimensions?: string } {
@@ -86,6 +112,41 @@ function extractSvgMetrics(svg: string): { viewBox?: string; dimensions?: string
   return {};
 }
 
+function getLibraryBadgeStyle(library: string) {
+  switch (library) {
+    case 'si':
+      return {
+        label: 'SI',
+        title: 'Simple Icons (Official Brands & Distros)',
+        className: 'bg-cyan-950/90 text-cyan-300 border-cyan-800/70',
+      };
+    case 'fa6':
+      return {
+        label: 'FA6',
+        title: 'Font Awesome 6 (Hardware & Cloud)',
+        className: 'bg-indigo-950/90 text-indigo-300 border-indigo-800/70',
+      };
+    case 'vsc':
+      return {
+        label: 'VSC',
+        title: 'VS Code Codicons (VMs & Azure)',
+        className: 'bg-sky-950/90 text-sky-300 border-sky-800/70',
+      };
+    case 'di':
+      return {
+        label: 'DI',
+        title: 'Devicons (Classic Developer & SysAdmin)',
+        className: 'bg-emerald-950/90 text-emerald-300 border-emerald-800/70',
+      };
+    default:
+      return {
+        label: 'LUCIDE',
+        title: 'Lucide Icons (Modern Minimalist)',
+        className: 'bg-fuchsia-950/90 text-fuchsia-300 border-fuchsia-800/70',
+      };
+  }
+}
+
 export const IconPickerModal: React.FC<IconPickerModalProps> = ({
   isOpen,
   onClose,
@@ -93,6 +154,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
   onSave,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLibrary, setSelectedLibrary] = useState<IconLibraryId>('all');
   const [selectedCategory, setSelectedCategory] = useState<IconCategory | 'upload' | 'custom'>('all');
   const [selectedIconName, setSelectedIconName] = useState<string | undefined>(undefined);
   const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
@@ -105,7 +167,6 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [showCodeEditor, setShowCodeEditor] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,9 +176,9 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
       setSelectedIconName(target.currentIcon);
       setSelectedColor(target.currentIconColor);
       setSearchQuery('');
+      setSelectedLibrary('all');
       setUploadError(null);
       setIsCopied(false);
-      setShowCodeEditor(false);
 
       if (target.currentIcon && isSvgMarkup(target.currentIcon)) {
         setSelectedCategory('upload');
@@ -125,7 +186,8 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
         setUploadedFileName('Current Custom SVG');
         setUploadedFileSize(`${(new Blob([target.currentIcon]).size / 1024).toFixed(1)} KB`);
       } else {
-        setSelectedCategory(target.type === 'folder' ? 'folders' : 'docs');
+        // If target already has an icon, check its category or default to all
+        setSelectedCategory('all');
         setCustomSvgInput('');
         setUploadedFileName(null);
         setUploadedFileSize(null);
@@ -133,6 +195,23 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
       setCustomHexInput(target.currentIconColor || '');
     }
   }, [isOpen, target]);
+
+  // Compute counts for libraries and categories
+  const libraryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: ICON_LIBRARY.length };
+    for (const item of ICON_LIBRARY) {
+      counts[item.library] = (counts[item.library] || 0) + 1;
+    }
+    return counts;
+  }, []);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: ICON_LIBRARY.length };
+    for (const item of ICON_LIBRARY) {
+      counts[item.category] = (counts[item.category] || 0) + 1;
+    }
+    return counts;
+  }, []);
 
   // Process selected or dropped SVG file
   const processSvgFile = async (file: File) => {
@@ -188,7 +267,6 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
     if (files && files.length > 0) {
       processSvgFile(files[0]);
     }
-    // reset input so selecting the same file triggers change
     if (e.target) {
       e.target.value = '';
     }
@@ -246,10 +324,15 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
     setSelectedIconName(undefined);
   };
 
-  // Filter icons based on search query and category
+  // Filter icons based on search query, category, and icon library
   const filteredIcons = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return ICON_LIBRARY.filter((item) => {
+      // Library filter
+      if (selectedLibrary !== 'all') {
+        if (item.library !== selectedLibrary) return false;
+      }
+
       // Category filter
       if (selectedCategory !== 'all' && selectedCategory !== 'upload' && selectedCategory !== 'custom') {
         if (item.category !== selectedCategory) return false;
@@ -259,9 +342,10 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
       if (!q) return true;
       if (item.name.toLowerCase().includes(q)) return true;
       if (item.label.toLowerCase().includes(q)) return true;
+      if (item.library.toLowerCase().includes(q)) return true;
       return item.keywords.some((kw) => kw.toLowerCase().includes(q));
     });
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, selectedLibrary]);
 
   if (!isOpen || !target) return null;
 
@@ -293,7 +377,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
   const metrics = customSvgInput ? extractSvgMetrics(customSvgInput) : {};
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-['Space_Grotesk',sans-serif] animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs font-['Space_Grotesk',sans-serif] animate-in fade-in duration-150">
       {/* Hidden File Input for .svg selection */}
       <input
         ref={fileInputRef}
@@ -305,13 +389,13 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
 
       <div
         id="icon-picker-modal-dialog"
-        className="relative w-full max-w-2xl bg-[#150d24] border border-[#2e1c52] rounded-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-[#faf5ff]"
+        className="relative w-full max-w-3xl bg-[#150d24] border border-[#2e1c52] rounded-xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-[#faf5ff]"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2e1c52] bg-[#19102b]">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#2e1c52] bg-[#19102b]">
+          <div className="flex items-center gap-3">
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center border border-[#2e1c52] p-1.5"
+              className="w-9 h-9 rounded-lg flex items-center justify-center border border-[#2e1c52] p-1.5 shadow-inner"
               style={{ backgroundColor: '#1f1338' }}
             >
               <CustomIconRenderer
@@ -328,6 +412,9 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                 </h2>
                 <span className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-['Space_Mono',monospace] bg-[#2e1c52] text-[#ec4899] font-semibold">
                   {isFolder ? 'Folder' : 'Note'}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 font-medium">
+                  {ICON_LIBRARY.length} Icons across 5 Libraries
                 </span>
               </div>
               <p className="text-xs text-[#c084fc]/70 truncate max-w-md">
@@ -347,8 +434,46 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
           </button>
         </div>
 
-        {/* Search Bar, Quick Upload & Category Switcher */}
-        <div className="px-5 pt-3.5 pb-2 border-b border-[#2e1c52] bg-[#150d24] space-y-2.5">
+        {/* 1. Icon Library Selector Filter Row */}
+        <div className="px-5 py-2.5 bg-[#120a20] border-b border-[#2e1c52] flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-[#c084fc] font-medium mr-1">
+            <Layers className="w-3.5 h-3.5 text-[#ec4899]" />
+            <span>Library:</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+            {ICON_LIBRARIES.map((lib) => {
+              const isSelected = selectedLibrary === lib.id;
+              const count = libraryCounts[lib.id] || 0;
+              return (
+                <button
+                  key={lib.id}
+                  type="button"
+                  id={`btn-library-filter-${lib.id}`}
+                  onClick={() => setSelectedLibrary(lib.id)}
+                  title={lib.description}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#ec4899] text-[#faf5ff] font-semibold shadow-xs'
+                      : 'bg-[#1a0f2e] text-[#c084fc] hover:bg-[#251542] hover:text-[#faf5ff] border border-[#2e1c52]'
+                  }`}
+                >
+                  <span>{lib.label}</span>
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded font-mono ${
+                      isSelected ? 'bg-black/30 text-white' : 'bg-[#150d24] text-[#c084fc]/80'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 2. Search Bar & Quick Tags */}
+        <div className="px-5 pt-3 pb-2.5 border-b border-[#2e1c52] bg-[#150d24] space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 text-[#c084fc] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -357,9 +482,9 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search icons (e.g. brain, git, code, folder, science, lock)..."
+                placeholder="Search Linux distros, cloud providers, sysadmin tools, containers, DBs, or UI icons..."
                 disabled={selectedCategory === 'upload' || selectedCategory === 'custom'}
-                className="w-full pl-8.5 pr-8 py-1.5 text-xs bg-[#1f1338] border border-[#2e1c52] rounded-lg text-[#faf5ff] placeholder-[#c084fc]/50 focus:outline-none focus:border-[#ec4899] disabled:opacity-50 transition-colors"
+                className="w-full pl-8.5 pr-8 py-1.5 text-xs bg-[#1f1338] border border-[#2e1c52] rounded-lg text-[#faf5ff] placeholder-[#c084fc]/50 focus:outline-none focus:border-[#ec4899] disabled:opacity-50 transition-colors font-mono"
               />
               {searchQuery && (
                 <button
@@ -380,7 +505,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                 setSelectedCategory('upload');
                 fileInputRef.current?.click();
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-[#ec4899]/20 hover:bg-[#ec4899]/30 border border-[#ec4899]/60 text-[#faf5ff] transition-colors cursor-pointer whitespace-nowrap font-medium"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-[#1f1338] hover:bg-[#281745] border border-[#ec4899]/60 text-[#faf5ff] transition-colors cursor-pointer whitespace-nowrap font-medium shadow-2xs"
               title="Upload an .svg vector file"
             >
               <Upload className="w-3.5 h-3.5 text-[#ec4899]" />
@@ -400,8 +525,32 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
             </button>
           </div>
 
-          {/* Category Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs scrollbar-none">
+          {/* Quick search suggestion tags */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[10px]">
+            <span className="text-[#c084fc]/60 shrink-0 font-mono">Quick:</span>
+            {POPULAR_SEARCH_TAGS.map((tag) => (
+              <button
+                key={tag.query}
+                type="button"
+                onClick={() => {
+                  setSearchQuery(tag.query);
+                  if (selectedCategory === 'upload' || selectedCategory === 'custom') {
+                    setSelectedCategory('all');
+                  }
+                }}
+                className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer font-mono ${
+                  searchQuery.toLowerCase() === tag.query.toLowerCase()
+                    ? 'bg-[#ec4899] text-[#faf5ff] font-semibold'
+                    : 'bg-[#1f1338] hover:bg-[#2e1c52] text-[#c084fc] hover:text-[#faf5ff] border border-[#2e1c52]'
+                }`}
+              >
+                {tag.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Category Tabs */}
+          <div className="flex items-center gap-1 overflow-x-auto pt-1 pb-0.5 text-xs scrollbar-none">
             {/* Upload SVG Tab */}
             <button
               id="tab-upload-svg"
@@ -420,20 +569,32 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
               )}
             </button>
 
-            {ICON_CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                  selectedCategory === cat.id
-                    ? 'bg-[#ec4899] text-[#faf5ff] font-semibold shadow-xs'
-                    : 'bg-[#1f1338] text-[#c084fc] hover:bg-[#2e1c52] hover:text-[#faf5ff]'
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
+            {ICON_CATEGORIES.map((cat) => {
+              const count = categoryCounts[cat.id] || 0;
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  id={`tab-category-${cat.id}`}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#ec4899] text-[#faf5ff] font-semibold shadow-xs'
+                      : 'bg-[#1f1338] text-[#c084fc] hover:bg-[#2e1c52] hover:text-[#faf5ff]'
+                  }`}
+                >
+                  <span>{cat.label}</span>
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded font-mono ${
+                      isSelected ? 'bg-black/30 text-white' : 'text-[#c084fc]/70'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
 
             <button
               id="tab-paste-svg"
@@ -451,8 +612,8 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
           </div>
         </div>
 
-        {/* Color Palette Selector */}
-        <div className="px-5 py-2.5 bg-[#19102b] border-b border-[#2e1c52] flex items-center justify-between gap-3 text-xs">
+        {/* 3. Color Palette Selector */}
+        <div className="px-5 py-2 bg-[#19102b] border-b border-[#2e1c52] flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-1.5 text-[11px] text-[#c084fc] font-medium shrink-0">
             <Palette className="w-3.5 h-3.5 text-[#ec4899]" />
             <span>Icon Accent:</span>
@@ -514,8 +675,8 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
           </div>
         </div>
 
-        {/* Main Content Area */}
-        <div className="flex-1 overflow-y-auto p-5 min-h-[280px] max-h-[400px]">
+        {/* 4. Main Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 min-h-[300px] max-h-[440px]">
           {selectedCategory === 'upload' ? (
             /* Upload SVG Tab */
             <div className="space-y-4">
@@ -557,7 +718,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                   {isDraggingOver ? 'Drop your SVG icon here!' : 'Click to browse or drop an .svg file'}
                 </h3>
                 <p className="text-[11px] text-[#c084fc]/70 max-w-sm">
-                  Export vector graphics from Figma, Illustrator, FontAwesome, or Lucide. Accepts standard <code className="text-[#faf5ff] font-mono text-[10px] bg-[#150d24] px-1 py-0.5 rounded">.svg</code> files (max 1MB).
+                  Accepts standard <code className="text-[#faf5ff] font-mono text-[10px] bg-[#150d24] px-1 py-0.5 rounded">.svg</code> files from Linux distributions, cloud architectures, or custom design tools (max 1MB).
                 </p>
               </div>
 
@@ -653,10 +814,10 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                           <CustomIconRenderer
                             iconName={customSvgInput}
                             color={effectiveColor}
-                            className="w-4.5 h-4.5"
+                            className="w-4 h-4"
                           />
                         </div>
-                        <span className="text-[9px] font-mono text-[#c084fc]/70">18px (Tabs)</span>
+                        <span className="text-[9px] font-mono text-[#c084fc]/70">16px (Nav)</span>
                       </div>
 
                       <div className="p-2 rounded-lg bg-[#150d24] border border-[#2e1c52] flex flex-col items-center justify-center gap-1.5">
@@ -664,10 +825,10 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                           <CustomIconRenderer
                             iconName={customSvgInput}
                             color={effectiveColor}
-                            className="w-6 h-6"
+                            className="w-5 h-5"
                           />
                         </div>
-                        <span className="text-[9px] font-mono text-[#c084fc]/70">24px (Header)</span>
+                        <span className="text-[9px] font-mono text-[#c084fc]/70">20px (Title)</span>
                       </div>
 
                       <div className="p-2 rounded-lg bg-[#150d24] border border-[#2e1c52] flex flex-col items-center justify-center gap-1.5">
@@ -675,50 +836,21 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                           <CustomIconRenderer
                             iconName={customSvgInput}
                             color={effectiveColor}
-                            className="w-9 h-9"
+                            className="w-7 h-7"
                           />
                         </div>
-                        <span className="text-[9px] font-mono text-[#c084fc]/70">36px (Zoom)</span>
+                        <span className="text-[9px] font-mono text-[#c084fc]/70">28px (Hero)</span>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Expandable Raw SVG code viewer/editor */}
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowCodeEditor((prev) => !prev)}
-                      className="flex items-center gap-1 text-[11px] font-mono text-[#c084fc] hover:text-[#faf5ff] cursor-pointer"
-                    >
-                      {showCodeEditor ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                      <span>{showCodeEditor ? 'Hide SVG Code' : 'View / Edit SVG Markup'}</span>
-                    </button>
-
-                    {showCodeEditor && (
-                      <div className="mt-2 space-y-1.5">
-                        <textarea
-                          rows={4}
-                          value={customSvgInput}
-                          onChange={(e) => setCustomSvgInput(e.target.value)}
-                          className="w-full p-2 text-[10px] font-mono bg-[#150d24] border border-[#2e1c52] rounded text-[#faf5ff] placeholder-[#c084fc]/40 focus:outline-none focus:border-[#ec4899] resize-none"
-                        />
-                        <p className="text-[10px] text-[#c084fc]/60">
-                          Changes take effect instantly. Keep viewBox for proper scaling.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
 
-              {/* Sample Vector Templates */}
+              {/* Sample Vector SVGs */}
               <div>
                 <div className="text-[11px] font-semibold text-[#faf5ff] mb-2 flex items-center gap-1.5">
-                  <span>Or select a sample SVG vector icon:</span>
+                  <Sparkles className="w-3.5 h-3.5 text-[#ec4899]" />
+                  <span>Or select a sample Linux & Cloud SVG icon:</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {SAMPLE_SVGS.map((sample) => (
@@ -736,6 +868,9 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                       <span className="text-[10px] font-medium text-[#faf5ff] truncate max-w-full">
                         {sample.label}
                       </span>
+                      <span className="text-[9px] font-mono text-[#c084fc]/70">
+                        {sample.library}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -750,7 +885,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                   <span className="text-[10px] text-[#c084fc] font-mono">&lt;svg ...&gt;...&lt;/svg&gt;</span>
                 </div>
                 <p className="text-[11px] text-[#c084fc]/80 leading-relaxed">
-                  You can paste custom SVG vector code from your favorite icon libraries (e.g. Feather, FontAwesome, Material, Heroicons, or bespoke illustrations).
+                  Paste vector SVG markup from any Linux, Cloud, or custom design tool (e.g. Simple Icons, FontAwesome, SVGRepo, Figma, or GitHub).
                 </p>
                 <textarea
                   id="textarea-custom-svg"
@@ -763,7 +898,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                       setUploadedFileName('Pasted SVG');
                     }
                   }}
-                  placeholder='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'
+                  placeholder='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9.5 2 8 3.5 8 6v4c-1.5.5-3 2-3 4.5 0 2 1.5 3 2.5 3.5-.2.8-.5 1.5-1.5 2-.5.3-.5.9 0 1.2 1.2.7 3 .8 4.5.3 1 .3 2 .3 3 0 1.5.5 3.3.4 4.5-.3.5-.3.5-.9 0-1.2-1-.5-1.3-1.2-1.5-2 1-.5 2.5-1.5 2.5-3.5 0-2.5-1.5-4-3-4.5V6c0-2.5-1.5-4-4-4zm-1.5 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm3 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>'
                   className="w-full p-2.5 text-xs font-mono bg-[#150d24] border border-[#2e1c52] rounded text-[#faf5ff] placeholder-[#c084fc]/40 focus:outline-none focus:border-[#ec4899] resize-none"
                 />
               </div>
@@ -788,48 +923,74 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
               )}
             </div>
           ) : (
-            /* Curated SVG Icon Grid */
+            /* Curated SVG Icon Grid with Multi-Library Badges */
             <>
               {filteredIcons.length > 0 ? (
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                  {filteredIcons.map((item) => {
-                    const isSelected = selectedIconName?.toLowerCase() === item.name.toLowerCase();
-                    const IconComp = item.component;
+                <div>
+                  <div className="flex items-center justify-between text-[11px] text-[#c084fc]/80 mb-2.5 px-0.5">
+                    <span>
+                      Showing <strong className="text-[#faf5ff]">{filteredIcons.length}</strong> icons
+                      {selectedLibrary !== 'all' && (
+                        <span> in <span className="text-[#ec4899] uppercase font-mono">{selectedLibrary}</span></span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-[#c084fc]/60 font-mono">
+                      Click icon to select
+                    </span>
+                  </div>
 
-                    return (
-                      <button
-                        key={item.name}
-                        id={`btn-icon-item-${item.name}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedIconName(item.name);
-                          setCustomSvgInput('');
-                          setUploadedFileName(null);
-                        }}
-                        className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-lg border text-center transition-all cursor-pointer group ${
-                          isSelected
-                            ? 'bg-[#ec4899]/20 border-[#ec4899] text-[#faf5ff] ring-1 ring-[#ec4899]'
-                            : 'bg-[#1f1338] border-[#2e1c52] text-[#faf5ff]/80 hover:border-[#c084fc]/70 hover:bg-[#2a1a4c] hover:text-[#faf5ff]'
-                        }`}
-                        title={item.label}
-                      >
-                        <IconComp
-                          className="w-5 h-5 transition-transform group-hover:scale-110"
-                          style={{ color: isSelected ? effectiveColor : undefined }}
-                        />
-                        <span className="text-[10px] truncate max-w-full font-mono text-[#c084fc] group-hover:text-[#faf5ff]">
-                          {item.name}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-2">
+                    {filteredIcons.map((item) => {
+                      const isSelected = selectedIconName?.toLowerCase() === item.name.toLowerCase();
+                      const IconComp = item.component;
+                      const badgeInfo = getLibraryBadgeStyle(item.library);
+
+                      return (
+                        <button
+                          key={item.name}
+                          id={`btn-icon-item-${item.name}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedIconName(item.name);
+                            setCustomSvgInput('');
+                            setUploadedFileName(null);
+                          }}
+                          className={`relative flex flex-col items-center justify-center gap-1.5 p-2 rounded-lg border text-center transition-all cursor-pointer group ${
+                            isSelected
+                              ? 'bg-[#2a1444] border-2 border-[#ec4899] text-[#faf5ff] ring-2 ring-[#ec4899]/50 shadow-md'
+                              : 'bg-[#1f1338] border-[#2e1c52] text-[#faf5ff]/85 hover:border-[#c084fc]/70 hover:bg-[#2a1a4c] hover:text-[#faf5ff]'
+                          }`}
+                          title={`${item.label} (${item.name}) • ${badgeInfo.title}`}
+                        >
+                          {/* Library Tag Badge */}
+                          <span
+                            className={`absolute top-1 right-1 text-[8px] font-mono px-1 py-0.2 rounded border font-semibold ${badgeInfo.className}`}
+                            title={badgeInfo.title}
+                          >
+                            {badgeInfo.label}
+                          </span>
+
+                          <div className="w-7 h-7 flex items-center justify-center mt-1">
+                            <IconComp
+                              className="w-5 h-5 transition-transform group-hover:scale-115 shrink-0"
+                              style={{ color: isSelected ? (effectiveColor || '#ec4899') : '#faf5ff' }}
+                            />
+                          </div>
+
+                          <span className="text-[10px] truncate max-w-full font-mono text-[#c084fc] group-hover:text-[#faf5ff] px-1">
+                            {item.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div className="py-12 text-center space-y-2">
                   <Search className="w-8 h-8 text-[#c084fc]/40 mx-auto" />
-                  <div className="text-xs text-[#faf5ff] font-medium">No SVG icons match "{searchQuery}"</div>
-                  <div className="text-[11px] text-[#c084fc]/60">
-                    Try searching for terms like "folder", "code", "book", "brain", "tool", or "git", or upload your own SVG above.
+                  <div className="text-xs text-[#faf5ff] font-medium">No icons match "{searchQuery}"</div>
+                  <div className="text-[11px] text-[#c084fc]/60 max-w-md mx-auto">
+                    Try searching for <span className="text-[#faf5ff]">"ubuntu"</span>, <span className="text-[#faf5ff]">"docker"</span>, <span className="text-[#faf5ff]">"aws"</span>, <span className="text-[#faf5ff]">"nginx"</span>, or switch to <strong className="text-[#ec4899]">All Libraries</strong> above.
                   </div>
                 </div>
               )}
@@ -837,7 +998,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer & Live Item Preview */}
+        {/* 5. Modal Footer & Live Item Preview */}
         <div className="px-5 py-3.5 bg-[#19102b] border-t border-[#2e1c52] flex items-center justify-between gap-4">
           {/* Live Preview Strip */}
           <div className="flex items-center gap-2 min-w-0">

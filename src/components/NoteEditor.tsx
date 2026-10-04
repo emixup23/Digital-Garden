@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Edit3,
   Columns,
@@ -40,6 +40,15 @@ import {
   ListFilter,
   GripVertical,
   Search,
+  FoldVertical,
+  UnfoldVertical,
+  ChevronsUpDown,
+  ChevronsDownUp,
+  Headphones,
+  Baseline,
+  Highlighter,
+  Table as TableIcon,
+  Boxes,
 } from 'lucide-react';
 import { NoteFile, Folder, EditorMode } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -50,13 +59,19 @@ import { CustomIconRenderer } from '../utils/iconLibrary';
 import { LANGUAGE_METADATA } from './CodeBlock';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { VoiceDictationBar } from './VoiceDictationBar';
+import { useVoiceReader } from '../hooks/useVoiceReader';
+import { VoiceReaderBar } from './VoiceReaderBar';
 import { InsertImageModal } from './InsertImageModal';
 import { NoteHeaderBanner } from './ColoredBanner';
 import { InsertSelectionModal } from './InsertSelectionModal';
 import { InsertDateModal } from './InsertDateModal';
 import { InsertBannerModal } from './InsertBannerModal';
+import { InsertTableModal } from './InsertTableModal';
+import { InsertCanvasModal } from './InsertCanvasModal';
+import { TextColorPicker } from './TextColorPicker';
 import { AttachedImagesBar } from './AttachedImagesBar';
 import { InNoteFindReplace } from './InNoteFindReplace';
+import { loadCanvasBoards } from '../utils/canvasStore';
 import {
   saveAttachment,
   extractNoteImages,
@@ -72,6 +87,8 @@ interface NoteEditorProps {
   onDeleteNote: (noteId: string) => void;
   onNavigateToNote: (title: string) => void;
   onCreateNoteFromLink: (title: string) => void;
+  onNavigateToCanvas?: (canvasIdentifier: string, targetCardId?: string) => void;
+  onCreateCanvasFromLink?: (canvasName: string) => void;
   onCustomizeIcon?: () => void;
   isLeftSidebarOpen?: boolean;
   onToggleLeftSidebar?: () => void;
@@ -81,10 +98,16 @@ interface NoteEditorProps {
   onToggleSimplifiedPreview?: (enabled: boolean) => void;
   dictateTriggerCount?: number;
   onVoiceListeningChange?: (isListening: boolean) => void;
+  voiceReaderTriggerCount?: number;
+  onVoiceReadingChange?: (isReading: boolean) => void;
   insertImageTriggerCount?: number;
   insertSelectionTriggerCount?: number;
   insertDateTriggerCount?: number;
   insertBannerTriggerCount?: number;
+  insertTableTriggerCount?: number;
+  textColorTriggerCount?: number;
+  foldAllTriggerCount?: number;
+  expandAllTriggerCount?: number;
 }
 
 export const NoteEditor: React.FC<NoteEditorProps> = ({
@@ -95,6 +118,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   onDeleteNote,
   onNavigateToNote,
   onCreateNoteFromLink,
+  onNavigateToCanvas,
+  onCreateCanvasFromLink,
   onCustomizeIcon,
   isLeftSidebarOpen,
   onToggleLeftSidebar,
@@ -104,10 +129,16 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   onToggleSimplifiedPreview,
   dictateTriggerCount,
   onVoiceListeningChange,
+  voiceReaderTriggerCount,
+  onVoiceReadingChange,
   insertImageTriggerCount,
   insertSelectionTriggerCount,
   insertDateTriggerCount,
   insertBannerTriggerCount,
+  insertTableTriggerCount,
+  textColorTriggerCount,
+  foldAllTriggerCount,
+  expandAllTriggerCount,
 }) => {
   const [editorMode, setEditorMode] = useState<EditorMode>('split');
   const [content, setContent] = useState(note.content);
@@ -121,7 +152,16 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
   const [bannerModalInitialTab, setBannerModalInitialTab] = useState<'in-note' | 'header'>('in-note');
   const [bannerModalInitialContent, setBannerModalInitialContent] = useState<string>('');
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [isCanvasModalOpen, setIsCanvasModalOpen] = useState(false);
   const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
+
+  // Text Color & Highlight State
+  const [isTextColorPickerOpen, setIsTextColorPickerOpen] = useState(false);
+  const [activeTextColor, setActiveTextColor] = useState<string>(() => {
+    return localStorage.getItem('mf_last_text_color') || '#ec4899';
+  });
+  const [selectedTextForColor, setSelectedTextForColor] = useState<string>('');
   const savedSelectionRef = useRef<{ start: number; end: number } | null>(null);
 
   const saveCurrentSelection = useCallback(() => {
@@ -272,6 +312,160 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const [suggestionPosition, setSuggestionPosition] = useState<{ top: number; left: number } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Code folding & document outline state
+  const [globalFoldAction, setGlobalFoldAction] = useState<'fold-all' | 'expand-all' | null>(null);
+  const [globalFoldVersion, setGlobalFoldVersion] = useState<number>(0);
+  const [isCodeOutlineOpen, setIsCodeOutlineOpen] = useState(false);
+  const codeOutlineMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Sync external fold triggers from CommandPalette or Parent
+  const prevFoldAllRef = useRef(foldAllTriggerCount || 0);
+  useEffect(() => {
+    if (foldAllTriggerCount && foldAllTriggerCount !== prevFoldAllRef.current) {
+      prevFoldAllRef.current = foldAllTriggerCount;
+      setGlobalFoldAction('fold-all');
+      setGlobalFoldVersion((v) => v + 1);
+    }
+  }, [foldAllTriggerCount]);
+
+  const prevExpandAllRef = useRef(expandAllTriggerCount || 0);
+  useEffect(() => {
+    if (expandAllTriggerCount && expandAllTriggerCount !== prevExpandAllRef.current) {
+      prevExpandAllRef.current = expandAllTriggerCount;
+      setGlobalFoldAction('expand-all');
+      setGlobalFoldVersion((v) => v + 1);
+    }
+  }, [expandAllTriggerCount]);
+
+  // Close code outline menu on outside click or Escape
+  useEffect(() => {
+    if (!isCodeOutlineOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (codeOutlineMenuRef.current && !codeOutlineMenuRef.current.contains(e.target as Node)) {
+        setIsCodeOutlineOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsCodeOutlineOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isCodeOutlineOpen]);
+
+  // Parse all code blocks in current note for outline & navigation
+  const noteCodeBlocks = useMemo(() => {
+    const rawLines = content.split('\n');
+    const list: Array<{
+      id: string;
+      language: string;
+      startLine: number;
+      lineCount: number;
+      preview: string;
+    }> = [];
+    let inBlock = false;
+    let blockStart = 0;
+    let blockLang = '';
+    let blockLines: string[] = [];
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      const trimmed = line.trim();
+      if (!inBlock && trimmed.startsWith('```')) {
+        inBlock = true;
+        blockStart = i + 1;
+        blockLang = trimmed.slice(3).trim() || 'code';
+        blockLines = [];
+      } else if (inBlock && trimmed.startsWith('```')) {
+        inBlock = false;
+        let preview = '';
+        for (const bl of blockLines) {
+          const bt = bl.trim();
+          if (bt) {
+            preview = bt;
+            break;
+          }
+        }
+        list.push({
+          id: `code-${blockStart - 1}`,
+          language: blockLang.replace(/\b(fold|folded|collapse|collapsed)\b/gi, '').trim() || 'code',
+          startLine: blockStart,
+          lineCount: blockLines.length,
+          preview: preview || blockLang,
+        });
+      } else if (inBlock) {
+        blockLines.push(line);
+      }
+    }
+    return list;
+  }, [content]);
+
+  const handleFoldAllCode = useCallback(() => {
+    setGlobalFoldAction('fold-all');
+    setGlobalFoldVersion((v) => v + 1);
+  }, []);
+
+  const handleExpandAllCode = useCallback(() => {
+    setGlobalFoldAction('expand-all');
+    setGlobalFoldVersion((v) => v + 1);
+  }, []);
+
+  const handleJumpToCodeBlock = useCallback(
+    (item: { id: string; startLine: number }) => {
+      setIsCodeOutlineOpen(false);
+
+      // In source editor, position cursor and scroll to line
+      if (textareaRef.current && (editorMode === 'edit' || editorMode === 'split')) {
+        const lines = content.split('\n');
+        let charPos = 0;
+        for (let i = 0; i < item.startLine - 1 && i < lines.length; i++) {
+          charPos += lines[i].length + 1;
+        }
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(charPos, charPos);
+        const approxLineHeight = 22;
+        textareaRef.current.scrollTop = Math.max(0, (item.startLine - 4) * approxLineHeight);
+      }
+
+      // In preview, smoothly scroll to the rendered code block and highlight it
+      setTimeout(() => {
+        const el = document.getElementById(item.id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('code-jump-highlight');
+          setTimeout(() => {
+            el.classList.remove('code-jump-highlight');
+          }, 1800);
+        }
+      }, 60);
+    },
+    [content, editorMode]
+  );
+
+  // Global keyboard shortcuts: Alt+[ to fold all, Alt+] to expand all
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === '[' || e.code === 'BracketLeft')) {
+        e.preventDefault();
+        handleFoldAllCode();
+      } else if (e.altKey && (e.key === ']' || e.code === 'BracketRight')) {
+        e.preventDefault();
+        handleExpandAllCode();
+      } else if (e.altKey && (e.key.toLowerCase() === 't' || e.code === 'KeyT')) {
+        e.preventDefault();
+        saveCurrentSelection();
+        setIsTableModalOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [handleFoldAllCode, handleExpandAllCode, saveCurrentSelection]);
 
   // Undo & Redo History management
   const historyRef = useRef<string[]>([note.content]);
@@ -584,6 +778,80 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     onVoiceListeningChange?.(speech.isListening);
   }, [speech.isListening, onVoiceListeningChange]);
 
+  // Voice Text-to-Speech Reader
+  const [isVoiceReaderBarOpen, setIsVoiceReaderBarOpen] = useState(false);
+  const voiceReader = useVoiceReader({
+    onFinish: () => {
+      // Completed reading all sentences
+    },
+  });
+
+  // Notify parent component of voice reading status
+  useEffect(() => {
+    onVoiceReadingChange?.(voiceReader.isPlaying && !voiceReader.isPaused);
+  }, [voiceReader.isPlaying, voiceReader.isPaused, onVoiceReadingChange]);
+
+  // Stop voice reader and close bar when note changes
+  useEffect(() => {
+    voiceReader.stop();
+    setIsVoiceReaderBarOpen(false);
+  }, [note.id]);
+
+  // Toggle voice reader playback
+  const handleToggleVoiceReader = useCallback(
+    (onlySelection: boolean = false) => {
+      if (voiceReader.isPlaying) {
+        if (voiceReader.isPaused) {
+          voiceReader.resume();
+        } else {
+          voiceReader.pause();
+        }
+        return;
+      }
+
+      setIsVoiceReaderBarOpen(true);
+
+      let textToRead = content;
+      let isSelection = false;
+
+      if (textareaRef.current) {
+        const selStart = textareaRef.current.selectionStart;
+        const selEnd = textareaRef.current.selectionEnd;
+        if (selEnd > selStart) {
+          const selected = content.slice(selStart, selEnd).trim();
+          if (selected.length > 0) {
+            textToRead = selected;
+            isSelection = true;
+          }
+        }
+      }
+
+      if (!isSelection && onlySelection && typeof window !== 'undefined') {
+        const winSel = window.getSelection()?.toString().trim();
+        if (winSel) {
+          textToRead = winSel;
+          isSelection = true;
+        }
+      }
+
+      voiceReader.play({
+        text: textToRead,
+        title: note.title,
+        isSelection,
+      });
+    },
+    [content, note.title, voiceReader]
+  );
+
+  // Respond to voice reader trigger from parent
+  const prevVoiceReaderTriggerRef = useRef(voiceReaderTriggerCount || 0);
+  useEffect(() => {
+    if (voiceReaderTriggerCount && voiceReaderTriggerCount !== prevVoiceReaderTriggerRef.current) {
+      prevVoiceReaderTriggerRef.current = voiceReaderTriggerCount;
+      handleToggleVoiceReader(false);
+    }
+  }, [voiceReaderTriggerCount, handleToggleVoiceReader]);
+
   // Respond to dictate trigger from parent (CommandPalette / TopNav / Global shortcut)
   const prevTriggerRef = useRef(dictateTriggerCount || 0);
   useEffect(() => {
@@ -753,6 +1021,45 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }, 10);
   }, [content, handleContentChange]);
 
+  // Insert markdown table syntax at cursor
+  const handleInsertTableSyntax = useCallback((syntax: string) => {
+    const frontmatterMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+    const bodyStartIndex = frontmatterMatch ? frontmatterMatch[0].length : 0;
+
+    let start = content.length;
+    let end = content.length;
+
+    if (savedSelectionRef.current) {
+      start = savedSelectionRef.current.start;
+      end = savedSelectionRef.current.end;
+      savedSelectionRef.current = null;
+    } else if (textareaRef.current) {
+      start = textareaRef.current.selectionStart ?? content.length;
+      end = textareaRef.current.selectionEnd ?? content.length;
+    }
+
+    if (start < bodyStartIndex) {
+      start = bodyStartIndex;
+      end = bodyStartIndex;
+    }
+
+    const needsLeadingNewline = start > 0 && content[start - 1] !== '\n';
+    const needsTrailingNewline = end < content.length && content[end] !== '\n';
+    const toInsert = (needsLeadingNewline ? '\n\n' : '\n') + syntax + (needsTrailingNewline ? '\n\n' : '\n');
+
+    const newContent = content.slice(0, start) + toInsert + content.slice(end);
+    const newCursorPos = start + toInsert.length;
+
+    setContent(newContent);
+    handleContentChange(newContent, true, true);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 10);
+  }, [content, handleContentChange]);
+
   // Set note top hero banner
   const handleSetNoteBanner = useCallback((color: string, icon: string, height: 'sm' | 'md' | 'lg' = 'md') => {
     const parsed = parseMfContent(content);
@@ -827,6 +1134,13 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   }, [insertBannerTriggerCount]);
 
+  useEffect(() => {
+    if (insertTableTriggerCount && insertTableTriggerCount > 0) {
+      saveCurrentSelection();
+      setIsTableModalOpen(true);
+    }
+  }, [insertTableTriggerCount, saveCurrentSelection]);
+
   // Extract all images in note for the AttachedImagesBar and user-friendly previews
   const noteImages = React.useMemo(() => {
     return extractNoteImages(content);
@@ -872,6 +1186,138 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       handleContentChange(newContent, true, true);
     }
   }, [content, handleContentChange]);
+
+  // Text Color Handlers
+  const handleOpenTextColorPicker = useCallback(() => {
+    saveCurrentSelection();
+    let selected = '';
+    if (textareaRef.current) {
+      const s = textareaRef.current.selectionStart ?? 0;
+      const e = textareaRef.current.selectionEnd ?? 0;
+      if (e > s) {
+        selected = content.slice(s, e);
+      }
+    }
+    setSelectedTextForColor(selected);
+    setIsTextColorPickerOpen((prev) => !prev);
+  }, [saveCurrentSelection, content]);
+
+  const handleApplyTextColor = useCallback(
+    (color: string, mode: 'color' | 'highlight') => {
+      setActiveTextColor(color);
+      localStorage.setItem('mf_last_text_color', color);
+
+      if (!textareaRef.current) return;
+      const textarea = textareaRef.current;
+      let start = textarea.selectionStart;
+      let end = textarea.selectionEnd;
+
+      if (savedSelectionRef.current) {
+        start = savedSelectionRef.current.start;
+        end = savedSelectionRef.current.end;
+        savedSelectionRef.current = null;
+      }
+
+      const selected = content.slice(start, end) || 'colored text';
+
+      let replacement = '';
+      // Check if selected is already wrapped in a color span: e.g. <span style="...">text</span> or ## <span style="...">text</span>
+      const existingSpanMatch = selected.match(/^(\s*#{0,6}\s*)<span\s+style=["'][^"']*["']>([\s\S]*?)<\/span>\s*$/i);
+      // Check if selected has a span wrapping a heading: e.g. <span style="...">## text</span>
+      const wrappedHeadingSpanMatch = selected.match(/^(\s*)<span\s+style=["'][^"']*["']\s*>\s*(#{1,6}\s+)([\s\S]*?)<\/span>\s*$/i);
+
+      if (wrappedHeadingSpanMatch) {
+        const hashes = wrappedHeadingSpanMatch[2];
+        const innerText = wrappedHeadingSpanMatch[3];
+        if (mode === 'color') {
+          replacement = `${hashes}<span style="color: ${color}">${innerText}</span>`;
+        } else {
+          replacement = `${hashes}<span style="background-color: ${color}33; color: ${color}; border: 1px solid ${color}55; border-radius: 4px; padding: 1px 6px;">${innerText}</span>`;
+        }
+      } else if (existingSpanMatch) {
+        const prefix = existingSpanMatch[1];
+        const inner = existingSpanMatch[2];
+        if (mode === 'color') {
+          replacement = `${prefix}<span style="color: ${color}">${inner}</span>`;
+        } else {
+          replacement = `${prefix}<span style="background-color: ${color}33; color: ${color}; border: 1px solid ${color}55; border-radius: 4px; padding: 1px 6px;">${inner}</span>`;
+        }
+      } else {
+        // Check if selected starts with heading syntax: e.g. "## Heading" or "# Title"
+        const headingMatch = selected.match(/^(\s*#{1,6}\s+)([\s\S]*?)(\r?\n)?$/);
+        if (headingMatch) {
+          const hashes = headingMatch[1];
+          const headingText = headingMatch[2];
+          const trailingNewline = headingMatch[3] || '';
+          if (mode === 'color') {
+            replacement = `${hashes}<span style="color: ${color}">${headingText}</span>${trailingNewline}`;
+          } else {
+            replacement = `${hashes}<span style="background-color: ${color}33; color: ${color}; border: 1px solid ${color}55; border-radius: 4px; padding: 1px 6px;">${headingText}</span>${trailingNewline}`;
+          }
+        } else if (mode === 'color') {
+          replacement = `<span style="color: ${color}">${selected}</span>`;
+        } else {
+          replacement = `<span style="background-color: ${color}33; color: ${color}; border: 1px solid ${color}55; border-radius: 4px; padding: 1px 6px;">${selected}</span>`;
+        }
+      }
+
+      const newContent = content.slice(0, start) + replacement + content.slice(end);
+      setContent(newContent);
+      handleContentChange(newContent, true, true);
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(start, start + replacement.length);
+        }
+      }, 10);
+    },
+    [content, handleContentChange]
+  );
+
+  const handleClearTextColor = useCallback(() => {
+    if (!textareaRef.current) return;
+    const textarea = textareaRef.current;
+    let start = textarea.selectionStart;
+    let end = textarea.selectionEnd;
+
+    if (savedSelectionRef.current) {
+      start = savedSelectionRef.current.start;
+      end = savedSelectionRef.current.end;
+      savedSelectionRef.current = null;
+    }
+
+    if (start === end) return;
+    const selected = content.slice(start, end);
+    const stripped = selected
+      .replace(/<span\s+style=["'][^"']*["']>([\s\S]*?)<\/span>/gi, '$1')
+      .replace(/<font\s+color=["'][^"']*["']>([\s\S]*?)<\/font>/gi, '$1')
+      .replace(/<mark(?:\s+style=["'][^"']*["'])?>([\s\S]*?)<\/mark>/gi, '$1')
+      .replace(/\[color:[^:]+:([^\]]+)\]/g, '$1')
+      .replace(/==([^=]+)==/g, '$1')
+      .replace(/\s*\{:?\s*(?:style=["'])?color:[^}]+\}/gi, '')
+      .replace(/\s*\[color:[a-zA-Z0-9#\(\),.\s%_-]+\]/gi, '');
+
+    const newContent = content.slice(0, start) + stripped + content.slice(end);
+    setContent(newContent);
+    handleContentChange(newContent, true, true);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(start, start + stripped.length);
+      }
+    }, 10);
+  }, [content, handleContentChange]);
+
+  // Respond to text color trigger from parent (CommandPalette / Shortcuts)
+  const prevTextColorTriggerRef = useRef(textColorTriggerCount || 0);
+  useEffect(() => {
+    if (textColorTriggerCount && textColorTriggerCount !== prevTextColorTriggerRef.current) {
+      prevTextColorTriggerRef.current = textColorTriggerCount;
+      handleOpenTextColorPicker();
+    }
+  }, [textColorTriggerCount, handleOpenTextColorPicker]);
 
   // Handle direct clipboard paste of image files (saves to vault attachments instead of huge base64 text)
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -921,14 +1367,56 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   };
 
+  // Canvas boards for linking & autocomplete
+  const canvasBoards = React.useMemo(() => {
+    return loadCanvasBoards(allNotes);
+  }, [allNotes]);
+
+  interface WikiSuggestionItem {
+    id: string;
+    title: string;
+    insertValue: string;
+    isCanvas: boolean;
+    subtitle?: string;
+  }
+
   // Autocomplete options
-  const matchingNotes = React.useMemo(() => {
+  const matchingWikiItems = React.useMemo((): WikiSuggestionItem[] => {
     if (autoCompleteType !== 'wikilink') return [];
-    const q = autoCompleteQuery.toLowerCase();
-    return allNotes
+    let q = autoCompleteQuery.toLowerCase();
+    const isExplicitCanvas = q.startsWith('canvas:');
+    if (isExplicitCanvas) {
+      q = q.slice(7).trim();
+    }
+
+    const matchedCanvases: WikiSuggestionItem[] = canvasBoards
+      .filter((b) => b.name.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map((b) => ({
+        id: `canvas-${b.id}`,
+        title: b.name,
+        insertValue: `canvas:${b.name}`,
+        isCanvas: true,
+        subtitle: `${b.nodes.length} cards`,
+      }));
+
+    if (isExplicitCanvas) {
+      return matchedCanvases;
+    }
+
+    const matchedNotes: WikiSuggestionItem[] = allNotes
       .filter((n) => n.id !== note.id && n.title.toLowerCase().includes(q))
-      .slice(0, 7);
-  }, [autoCompleteType, autoCompleteQuery, allNotes, note.id]);
+      .slice(0, 7)
+      .map((n) => ({
+        id: n.id,
+        title: n.title,
+        insertValue: n.title,
+        isCanvas: false,
+        subtitle: n.tags.length > 0 ? `#${n.tags[0]}` : undefined,
+      }));
+
+    return [...matchedCanvases, ...matchedNotes].slice(0, 8);
+  }, [autoCompleteType, autoCompleteQuery, allNotes, canvasBoards, note.id]);
 
   const matchingTags = React.useMemo(() => {
     if (autoCompleteType !== 'tag') return [];
@@ -962,6 +1450,48 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     textareaRef.current.focus();
   };
 
+  // Insert canvas syntax at cursor
+  const handleInsertCanvasSyntax = useCallback(
+    (syntax: string) => {
+      if (!syntax) return;
+      let start = content.length;
+      let end = content.length;
+
+      if (savedSelectionRef.current) {
+        start = savedSelectionRef.current.start;
+        end = savedSelectionRef.current.end;
+        savedSelectionRef.current = null;
+      } else if (textareaRef.current) {
+        start = textareaRef.current.selectionStart ?? content.length;
+        end = textareaRef.current.selectionEnd ?? content.length;
+      }
+
+      const frontmatterMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+      const bodyStartIndex = frontmatterMatch ? frontmatterMatch[0].length : 0;
+      if (start < bodyStartIndex) {
+        start = bodyStartIndex;
+        end = bodyStartIndex;
+      }
+
+      const needsLeadingSpace = start > 0 && !/\s/.test(content[start - 1]);
+      const needsTrailingSpace = end < content.length && !/\s/.test(content[end]);
+      const toInsert = (needsLeadingSpace ? ' ' : '') + syntax + (needsTrailingSpace ? ' ' : '');
+
+      const newContent = content.slice(0, start) + toInsert + content.slice(end);
+      const newCursorPos = start + toInsert.length;
+
+      setContent(newContent);
+      handleContentChange(newContent, true, true);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+        }
+      }, 10);
+    },
+    [content, handleContentChange]
+  );
+
   // Keyboard navigation for autocomplete & smart Tab indentation & Voice Dictation & Undo/Redo
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Undo shortcut (Cmd+Z or Ctrl+Z)
@@ -981,6 +1511,14 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       return;
     }
 
+    // Insert Canvas Link shortcut (Alt+K)
+    if (e.altKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      saveCurrentSelection();
+      setIsCanvasModalOpen(true);
+      return;
+    }
+
     // Voice dictation shortcut Cmd+Shift+V
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
       e.preventDefault();
@@ -992,6 +1530,28 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       setIsFindReplaceOpen(true);
+      return;
+    }
+
+    // Text Color & Highlight shortcut (Alt+C or Cmd+Shift+H)
+    if (
+      (e.altKey && e.key.toLowerCase() === 'c') ||
+      ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'h')
+    ) {
+      e.preventDefault();
+      handleOpenTextColorPicker();
+      return;
+    }
+
+    // Code folding shortcuts: Alt+[ or Alt+]
+    if (e.altKey && (e.key === '[' || e.code === 'BracketLeft')) {
+      e.preventDefault();
+      handleFoldAllCode();
+      return;
+    }
+    if (e.altKey && (e.key === ']' || e.code === 'BracketRight')) {
+      e.preventDefault();
+      handleExpandAllCode();
       return;
     }
 
@@ -1039,7 +1599,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
 
     const listLength =
-      autoCompleteType === 'wikilink' ? matchingNotes.length : matchingTags.length;
+      autoCompleteType === 'wikilink' ? matchingWikiItems.length : matchingTags.length;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1051,7 +1611,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       if (listLength > 0) {
         e.preventDefault();
         if (autoCompleteType === 'wikilink') {
-          insertCompletion(matchingNotes[autoCompleteIndex].title);
+          insertCompletion(matchingWikiItems[autoCompleteIndex].insertValue);
         } else {
           insertCompletion(matchingTags[autoCompleteIndex]);
         }
@@ -1221,12 +1781,72 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }, 0);
   };
 
-  // Compute current folder path name for breadcrumb
-  const currentFolderName = React.useMemo(() => {
-    if (!note.folderId) return 'Root';
-    const f = folders.find((item) => item.id === note.folderId);
-    return f ? f.name : 'Vault';
+  // Toggle or cycle heading on current line or selection (# -> ## -> ### -> normal)
+  const handleToggleHeading = () => {
+    if (!textareaRef.current) return;
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    // Find the line start and line end
+    const lineStart = content.lastIndexOf('\n', start - 1) + 1;
+    const nextLineEnd = content.indexOf('\n', end);
+    const lineEnd = nextLineEnd === -1 ? content.length : nextLineEnd;
+    const lineText = content.slice(lineStart, lineEnd);
+
+    // If line is wrapped in a colored span: <span style="...">## Heading</span>
+    const wrappedHeadingMatch = lineText.match(/^(\s*)<span\s+style=["'](.*?)["']\s*>\s*(#{1,6})\s+([\s\S]*?)<\/span>\s*$/i);
+    let newLineText = '';
+
+    if (wrappedHeadingMatch) {
+      const indent = wrappedHeadingMatch[1];
+      const styleAttr = wrappedHeadingMatch[2];
+      const hashes = wrappedHeadingMatch[3];
+      const text = wrappedHeadingMatch[4];
+      if (hashes === '###') {
+        newLineText = `${indent}<span style="${styleAttr}">${text}</span>`;
+      } else if (hashes === '##') {
+        newLineText = `${indent}### <span style="${styleAttr}">${text}</span>`;
+      } else if (hashes === '#') {
+        newLineText = `${indent}## <span style="${styleAttr}">${text}</span>`;
+      } else {
+        newLineText = `${indent}## <span style="${styleAttr}">${text}</span>`;
+      }
+    } else if (lineText.startsWith('### ')) {
+      newLineText = lineText.slice(4);
+    } else if (lineText.startsWith('## ')) {
+      newLineText = '### ' + lineText.slice(3);
+    } else if (lineText.startsWith('# ')) {
+      newLineText = '## ' + lineText.slice(2);
+    } else {
+      newLineText = '## ' + lineText;
+    }
+
+    const newContent = content.slice(0, lineStart) + newLineText + content.slice(lineEnd);
+    setContent(newContent);
+    handleContentChange(newContent, true, true);
+    setTimeout(() => {
+      textarea.focus();
+      const diff = newLineText.length - lineText.length;
+      textarea.setSelectionRange(Math.max(lineStart, start + diff), Math.max(lineStart, end + diff));
+    }, 10);
+  };
+
+  // Compute current folder path segments for breadcrumb
+  const currentFolderPath = React.useMemo(() => {
+    if (!note.folderId) return ['Root'];
+    const path: string[] = [];
+    let curr = folders.find((item) => item.id === note.folderId);
+    const visited = new Set<string>();
+    while (curr && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      path.unshift(curr.name);
+      curr = curr.parentId ? folders.find((f) => f.id === curr.parentId) : undefined;
+    }
+    return path.length > 0 ? path : ['Root'];
   }, [note.folderId, folders]);
+
+  const currentFolderName = currentFolderPath.join(' / ');
 
   // Compute reading statistics
   const readingStats = React.useMemo(() => {
@@ -1257,6 +1877,30 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {noteCodeBlocks.length > 0 && (
+              <div className="flex items-center gap-1.5 mr-2">
+                <button
+                  id="btn-simplified-fold-all-code"
+                  type="button"
+                  onClick={handleFoldAllCode}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[6px] bg-[#1f1338] hover:bg-[#281745] text-[#c084fc] hover:text-[#faf5ff] border border-[#2e1c52] text-xs font-mono cursor-pointer transition-all active:scale-95"
+                  title="Fold All Code Blocks in Document (Alt+[)"
+                >
+                  <FoldVertical className="w-3.5 h-3.5 text-[#ec4899]" />
+                  <span>Fold Code ({noteCodeBlocks.length})</span>
+                </button>
+                <button
+                  id="btn-simplified-expand-all-code"
+                  type="button"
+                  onClick={handleExpandAllCode}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[6px] bg-[#1f1338] hover:bg-[#281745] text-[#c084fc] hover:text-[#faf5ff] border border-[#2e1c52] text-xs font-mono cursor-pointer transition-all active:scale-95"
+                  title="Expand All Code Blocks in Document (Alt+])"
+                >
+                  <UnfoldVertical className="w-3.5 h-3.5 text-[#38bdf8]" />
+                  <span>Expand Code</span>
+                </button>
+              </div>
+            )}
             <button
               id="btn-exit-simplified-preview"
               type="button"
@@ -1336,6 +1980,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 setContent(newContent);
                 handleContentChange(newContent, true, true);
               }}
+              globalFoldAction={globalFoldAction}
+              globalFoldVersion={globalFoldVersion}
             />
           </div>
         </div>
@@ -1362,9 +2008,15 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 <span className="font-semibold">Files</span>
               </button>
             )}
-            <span>{currentFolderName}</span>
-            <span className="text-[#c084fc]/50">/</span>
-            <span className="text-[#faf5ff]">{note.title || note.name.replace(/\.(md|mf)$/i, '')}</span>
+            {currentFolderPath.map((segment, idx) => (
+              <React.Fragment key={idx}>
+                <span className={idx === currentFolderPath.length - 1 ? 'text-[#c084fc]' : 'text-[#c084fc]/70'}>
+                  {segment}
+                </span>
+                <span className="text-[#c084fc]/40">/</span>
+              </React.Fragment>
+            ))}
+            <span className="text-[#faf5ff] font-medium">{note.title || note.name.replace(/\.(md|mf)$/i, '')}</span>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -1486,62 +2138,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               <ChevronDown className="w-3 h-3 text-[#c084fc]" />
             )}
           </button>
-
-          {/* Button Customize/Toggle Banner in the same line of note name */}
-          <button
-            id="btn-note-banner-toggle"
-            type="button"
-            onClick={() => {
-              setBannerModalInitialTab('header');
-              setIsBannerModalOpen(true);
-            }}
-            className={`h-8 inline-flex items-center gap-1.5 px-2.5 rounded-[6px] text-xs font-['Space_Mono',monospace] transition-all duration-150 cursor-pointer border shrink-0 active:scale-95 ${
-              note.bannerColor
-                ? 'bg-[#1f1338] text-[#ec4899] border-[#ec4899]/60 hover:bg-[#281745] hover:border-[#ec4899]'
-                : 'bg-[#150d24] text-[#c084fc] border-[#2e1c52] hover:text-[#faf5ff] hover:bg-[#251543] hover:border-[#3b2366]'
-            }`}
-            title={note.bannerColor ? 'Change or customize top banner' : 'Add top hero banner to note'}
-          >
-            <Palette className="w-3 h-3 text-[#ec4899]" />
-            <span className="font-medium text-[11px]">{note.bannerColor ? 'Banner' : '+ Banner'}</span>
-          </button>
-
-          {/* Saved Status Indicator */}
-          <span className="h-8 inline-flex items-center text-[10px] px-2.5 rounded-[6px] bg-[#1f1338] text-[#c084fc] border border-[#2e1c52] font-['Space_Mono',monospace]">
-            Saved
-          </span>
-
-          {/* Undo & Redo Quick Buttons in Top Header */}
-          <div className="h-8 flex items-center bg-[#1f1338] p-0.5 rounded-[6px] border border-[#2e1c52]">
-            <button
-              id="btn-note-header-undo"
-              type="button"
-              onClick={handleUndo}
-              disabled={!canUndo}
-              className={`h-full px-2 rounded-[4px] flex items-center justify-center transition-all duration-150 active:scale-95 ${
-                canUndo
-                  ? 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#281745] cursor-pointer'
-                  : 'text-[#503577] opacity-40 cursor-not-allowed'
-              }`}
-              title="Undo (Ctrl+Z / Cmd+Z)"
-            >
-              <Undo className="w-3.5 h-3.5" />
-            </button>
-            <button
-              id="btn-note-header-redo"
-              type="button"
-              onClick={handleRedo}
-              disabled={!canRedo}
-              className={`h-full px-2 rounded-[4px] flex items-center justify-center transition-all duration-150 active:scale-95 ${
-                canRedo
-                  ? 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#281745] cursor-pointer'
-                  : 'text-[#503577] opacity-40 cursor-not-allowed'
-              }`}
-              title="Redo (Ctrl+Y / Cmd+Shift+Z)"
-            >
-              <Redo className="w-3.5 h-3.5" />
-            </button>
-          </div>
 
           {/* Customize Icon Action Button */}
           {onCustomizeIcon && (
@@ -1710,6 +2306,41 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             )}
           </button>
 
+          {/* Voice Reader / Text to Speech Audio Player */}
+          <button
+            id="btn-note-action-voice-reader"
+            type="button"
+            onClick={() => {
+              if (!isVoiceReaderBarOpen) {
+                handleToggleVoiceReader(false);
+              } else if (voiceReader.isPlaying && !voiceReader.isPaused) {
+                voiceReader.pause();
+              } else {
+                voiceReader.resume();
+              }
+            }}
+            className={`h-8 w-8 flex items-center justify-center rounded-[6px] transition-all duration-150 cursor-pointer active:scale-95 border ${
+              voiceReader.isPlaying && !voiceReader.isPaused
+                ? 'bg-[#ec4899] text-white border-[#ec4899] shadow-md animate-pulse'
+                : isVoiceReaderBarOpen
+                ? 'bg-[#251543] text-[#ec4899] border-[#ec4899]/60'
+                : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#251543] hover:border-[#ec4899]/50 border-[#2e1c52] bg-[#1f1338]'
+            }`}
+            title={
+              voiceReader.isPlaying && !voiceReader.isPaused
+                ? 'Pause Voice Reader (Cmd+Shift+R)'
+                : isVoiceReaderBarOpen
+                ? 'Resume Voice Reader (Cmd+Shift+R)'
+                : 'Voice Reader: Listen to Note Aloud (Cmd+Shift+R)'
+            }
+          >
+            {voiceReader.isPlaying && !voiceReader.isPaused ? (
+              <Headphones className="w-3.5 h-3.5 text-white animate-bounce" />
+            ) : (
+              <Headphones className="w-3.5 h-3.5 text-[#ec4899]" />
+            )}
+          </button>
+
           {/* Download note file */}
           <button
             id="btn-download-md"
@@ -1806,13 +2437,57 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             <Italic className="w-3.5 h-3.5" />
           </button>
           <button
+            id="btn-toolbar-heading-toggle"
             type="button"
-            onClick={() => insertFormatting('## ', '', 'Heading')}
+            onClick={handleToggleHeading}
             className="p-1.5 hover:bg-[#251543] hover:text-[#faf5ff] text-[#c084fc] rounded-[4px] transition-all duration-150 cursor-pointer active:scale-95"
-            title="Heading 2 (##)"
+            title="Heading (Click to cycle ## H2 -> ### H3 -> # H1)"
           >
             <Heading className="w-3.5 h-3.5" />
           </button>
+
+          {/* Text Color & Highlight Picker */}
+          <div className="relative z-40 shrink-0">
+            <div className="inline-flex items-center rounded-[6px] bg-[#1a1030] hover:bg-[#281745] border border-[#2e1c52] hover:border-[#ec4899]/60 transition-all shadow-2xs">
+              <button
+                id="btn-toolbar-text-color-quick"
+                type="button"
+                onClick={() => {
+                  if (textareaRef.current && textareaRef.current.selectionEnd > textareaRef.current.selectionStart) {
+                    handleApplyTextColor(activeTextColor, 'color');
+                  } else {
+                    handleOpenTextColorPicker();
+                  }
+                }}
+                className="h-7 px-2 flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 group"
+                title={`Text Color: Click to apply ${activeTextColor} (Shortcut: Alt+C)`}
+              >
+                <Baseline className="w-3.5 h-3.5 text-[#faf5ff] group-hover:text-[#ec4899] transition-colors" />
+                <span
+                  className="w-3.5 h-0.5 rounded-full transition-colors"
+                  style={{ backgroundColor: activeTextColor }}
+                />
+              </button>
+              <button
+                id="btn-toolbar-text-color-dropdown"
+                type="button"
+                onClick={handleOpenTextColorPicker}
+                className="h-7 px-1.5 flex items-center justify-center border-l border-[#2e1c52] hover:bg-[#251543] text-[#c084fc] hover:text-[#faf5ff] cursor-pointer transition-colors"
+                title="Open Text Color Palette & Highlight Options"
+              >
+                <ChevronDown className={`w-3 h-3 transition-transform ${isTextColorPickerOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            <TextColorPicker
+              isOpen={isTextColorPickerOpen}
+              onClose={() => setIsTextColorPickerOpen(false)}
+              activeColor={activeTextColor}
+              selectedText={selectedTextForColor}
+              onApplyColor={handleApplyTextColor}
+              onClearColor={handleClearTextColor}
+            />
+          </div>
 
           <div className="h-3.5 w-px bg-[#2e1c52] mx-1" />
 
@@ -1824,6 +2499,20 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           >
             <Link className="w-3.5 h-3.5 text-[#ec4899]" />
             <span>[[Wiki Link]]</span>
+          </button>
+
+          <button
+            id="btn-toolbar-insert-canvas"
+            type="button"
+            onClick={() => {
+              saveCurrentSelection();
+              setIsCanvasModalOpen(true);
+            }}
+            className="h-7 px-2.5 flex items-center gap-1.5 text-[#faf5ff] bg-[#1a1030] hover:bg-[#281745] rounded-[6px] font-mono text-xs leading-none transition-all duration-150 cursor-pointer border border-[#2e1c52] hover:border-[#a855f7]/80 active:scale-95 shadow-2xs shrink-0"
+            title="Insert Link to Canvas (Alt+K) - Reference visual whiteboard in note"
+          >
+            <Boxes className="w-3.5 h-3.5 text-[#a855f7]" />
+            <span>[[Canvas]]</span>
           </button>
 
           <button
@@ -1924,6 +2613,21 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             <span>Banner</span>
           </button>
 
+          {/* Table */}
+          <button
+            id="btn-toolbar-insert-table"
+            type="button"
+            onClick={() => {
+              saveCurrentSelection();
+              setIsTableModalOpen(true);
+            }}
+            className="h-7 px-2.5 flex items-center gap-1.5 text-[#faf5ff] bg-[#1a1030] hover:bg-[#281745] rounded-[6px] text-xs leading-none transition-all duration-150 cursor-pointer border border-[#2e1c52] hover:border-[#ec4899]/60 active:scale-95 shadow-2xs shrink-0"
+            title="Insert Markdown Table (Alt+T) - Customize columns, rows, alignments & presets"
+          >
+            <TableIcon className="w-3.5 h-3.5 text-[#ec4899]" />
+            <span>Table</span>
+          </button>
+
           <div className="h-3.5 w-px bg-[#2e1c52] mx-1" />
 
           <button
@@ -1990,6 +2694,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                   Insert Language Block
                 </div>
                 {[
+                  { id: 'bash', label: 'Bash / Shell', color: '#4ade80' },
                   { id: 'html', label: 'HTML', color: '#f97316' },
                   { id: 'xml', label: 'XML', color: '#fb923c' },
                   { id: 'php', label: 'PHP', color: '#818cf8' },
@@ -1999,7 +2704,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                   { id: 'typescript', label: 'TypeScript', color: '#60a5fa' },
                   { id: 'json', label: 'JSON', color: '#34d399' },
                   { id: 'css', label: 'CSS', color: '#38bdf8' },
-                  { id: 'bash', label: 'Bash / Shell', color: '#4ade80' },
+
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -2021,6 +2726,109 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                     </span>
                   </button>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Code Folding & Navigation Controls */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Fold All Code Blocks */}
+            <button
+              id="btn-toolbar-fold-all-code"
+              type="button"
+              onClick={handleFoldAllCode}
+              className="h-7 px-2 flex items-center gap-1 text-[#c084fc] hover:text-[#faf5ff] bg-[#1a1030] hover:bg-[#281745] rounded-[6px] text-xs leading-none transition-all duration-150 cursor-pointer border border-[#2e1c52] hover:border-[#ec4899]/60 active:scale-95 shadow-2xs"
+              title="Fold All Code Blocks (Alt+[)"
+            >
+              <FoldVertical className="w-3.5 h-3.5 text-[#ec4899]" />
+              <span className="hidden xl:inline text-[11px] font-mono">Fold All</span>
+            </button>
+
+            {/* Expand All Code Blocks */}
+            <button
+              id="btn-toolbar-expand-all-code"
+              type="button"
+              onClick={handleExpandAllCode}
+              className="h-7 px-2 flex items-center gap-1 text-[#c084fc] hover:text-[#faf5ff] bg-[#1a1030] hover:bg-[#281745] rounded-[6px] text-xs leading-none transition-all duration-150 cursor-pointer border border-[#2e1c52] hover:border-[#38bdf8]/60 active:scale-95 shadow-2xs"
+              title="Expand All Code Blocks (Alt+])"
+            >
+              <UnfoldVertical className="w-3.5 h-3.5 text-[#38bdf8]" />
+              <span className="hidden xl:inline text-[11px] font-mono">Expand All</span>
+            </button>
+
+            {/* Code Outline Navigator (shows when code blocks exist in note) */}
+            {noteCodeBlocks.length > 0 && (
+              <div className="relative z-40" ref={codeOutlineMenuRef}>
+                <button
+                  id="btn-toolbar-code-outline"
+                  type="button"
+                  onClick={() => setIsCodeOutlineOpen(!isCodeOutlineOpen)}
+                  className={`h-7 px-2.5 flex items-center gap-1.5 text-xs leading-none rounded-[6px] transition-all duration-150 cursor-pointer border active:scale-95 shadow-2xs ${
+                    isCodeOutlineOpen
+                      ? 'bg-[#251543] text-[#faf5ff] border-[#ec4899]'
+                      : 'bg-[#1a1030] hover:bg-[#281745] text-[#faf5ff] border-[#2e1c52] hover:border-[#ec4899]/60'
+                  }`}
+                  title={`Navigate & Fold ${noteCodeBlocks.length} code block${noteCodeBlocks.length === 1 ? '' : 's'} in this document`}
+                >
+                  <ChevronsUpDown className="w-3.5 h-3.5 text-[#ec4899]" />
+                  <span className="font-['Space_Mono',monospace] text-[11px]">
+                    {noteCodeBlocks.length} {noteCodeBlocks.length === 1 ? 'Block' : 'Blocks'}
+                  </span>
+                </button>
+
+                {isCodeOutlineOpen && (
+                  <div
+                    id="toolbar-code-outline-menu"
+                    className="absolute left-0 top-full mt-1.5 w-72 bg-[#150d24] border border-[#3b2366] rounded-[8px] shadow-2xl py-2 z-50 max-h-80 overflow-y-auto ring-1 ring-black/50"
+                  >
+                    <div className="px-3 py-1.5 border-b border-[#2e1c52] flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-[#c084fc]/70 uppercase tracking-wider font-['Space_Mono',monospace]">
+                        Code Blocks ({noteCodeBlocks.length})
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={handleFoldAllCode}
+                          className="px-1.5 py-0.5 text-[10px] rounded bg-[#1f1338] hover:bg-[#281745] text-[#ec4899] border border-[#2e1c52] cursor-pointer"
+                          title="Fold All (Alt+[)"
+                        >
+                          Fold All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleExpandAllCode}
+                          className="px-1.5 py-0.5 text-[10px] rounded bg-[#1f1338] hover:bg-[#281745] text-[#38bdf8] border border-[#2e1c52] cursor-pointer"
+                          title="Expand All (Alt+])"
+                        >
+                          Expand All
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="py-1">
+                      {noteCodeBlocks.map((block, idx) => (
+                        <button
+                          key={block.id}
+                          type="button"
+                          onClick={() => handleJumpToCodeBlock(block)}
+                          className="w-full px-3 py-1.5 text-left hover:bg-[#1f1338] transition-colors cursor-pointer group flex flex-col gap-0.5"
+                        >
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-[#faf5ff] group-hover:text-[#ec4899] uppercase tracking-wide font-mono text-[10px]">
+                              #{idx + 1} {block.language}
+                            </span>
+                            <span className="text-[10px] text-[#c084fc]/60 font-mono">
+                              Line {block.startLine} · {block.lineCount} lines
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#c084fc]/70 truncate font-mono group-hover:text-[#faf5ff]">
+                            {block.preview}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2054,6 +2862,34 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 <span className="font-['Space_Mono',monospace] text-xs">Dictate</span>
               </>
             )}
+          </button>
+
+          {/* Voice Reader Button in toolbar */}
+          <button
+            id="btn-toolbar-voice-reader"
+            type="button"
+            onClick={() => {
+              if (!isVoiceReaderBarOpen) {
+                handleToggleVoiceReader(false);
+              } else if (voiceReader.isPlaying && !voiceReader.isPaused) {
+                voiceReader.pause();
+              } else {
+                voiceReader.resume();
+              }
+            }}
+            className={`h-7 px-2.5 flex items-center gap-1.5 rounded-[6px] text-xs leading-none transition-all duration-150 cursor-pointer active:scale-95 border shrink-0 ${
+              voiceReader.isPlaying && !voiceReader.isPaused
+                ? 'bg-[#ec4899] text-white border-[#ec4899] shadow-xs animate-pulse'
+                : isVoiceReaderBarOpen
+                ? 'bg-[#251543] text-[#ec4899] border-[#ec4899]/60'
+                : 'text-[#faf5ff] bg-[#1a1030] hover:bg-[#281745] border-[#2e1c52] hover:border-[#ec4899]/60 shadow-2xs'
+            }`}
+            title="Voice Reader - Listen to note aloud (⌘⇧R)"
+          >
+            <Headphones className="w-3.5 h-3.5 text-[#ec4899]" />
+            <span className="font-['Space_Mono',monospace] text-xs">
+              {voiceReader.isPlaying && !voiceReader.isPaused ? 'Reading...' : 'Voice Reader'}
+            </span>
           </button>
           <div className="h-3.5 w-px bg-[#2e1c52] mx-1" />
 
@@ -2216,36 +3052,53 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 allNotes={allNotes}
                 onNavigateToNote={onNavigateToNote}
                 onCreateNoteFromLink={onCreateNoteFromLink}
+                onNavigateToCanvas={onNavigateToCanvas}
+                onCreateCanvasFromLink={onCreateCanvasFromLink}
                 onToggleCheckbox={handleToggleCheckbox}
                 onUpdateContent={(newContent) => {
                   setContent(newContent);
                   handleContentChange(newContent, true, true);
                 }}
+                globalFoldAction={globalFoldAction}
+                globalFoldVersion={globalFoldVersion}
               />
             </div>
           </div>
         )}
 
         {/* Autocomplete Popup */}
-        {autoCompleteType && (matchingNotes.length > 0 || matchingTags.length > 0) && (
+        {autoCompleteType && (matchingWikiItems.length > 0 || matchingTags.length > 0) && (
           <div className="absolute left-10 top-20 z-50 bg-[#150d24] border-[#2e1c52] rounded-[6px] shadow-2xl p-1.5 w-64 max-h-56 overflow-y-auto text-xs text-[#faf5ff]">
             <div className="px-2 py-1 text-[10px] font-semibold text-[#c084fc] uppercase tracking-wider font-['Space_Mono',monospace]">
-              {autoCompleteType === 'wikilink' ? 'Link to Note' : 'Insert Tag'}
+              {autoCompleteType === 'wikilink' ? 'Link to Note or Canvas' : 'Insert Tag'}
             </div>
             {autoCompleteType === 'wikilink' &&
-              matchingNotes.map((n, idx) => (
+              matchingWikiItems.map((item, idx) => (
                 <button
-                  key={n.id}
+                  key={item.id}
                   type="button"
-                  onClick={() => insertCompletion(n.title)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-[4px] flex items-center gap-2 cursor-pointer ${
+                  onClick={() => insertCompletion(item.insertValue)}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-[4px] flex items-center justify-between cursor-pointer ${
                     idx === autoCompleteIndex
                       ? 'bg-[#ec4899] text-[#faf5ff] font-semibold'
                       : 'text-[#faf5ff]/80 hover:bg-[#1f1338] hover:text-[#faf5ff]'
                   }`}
                 >
-                  <Link className={`w-3 h-3 shrink-0 ${idx === autoCompleteIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
-                  <span className="truncate">{n.title}</span>
+                  <div className="flex items-center gap-2 truncate">
+                    {item.isCanvas ? (
+                      <Boxes className={`w-3.5 h-3.5 shrink-0 ${idx === autoCompleteIndex ? 'text-white' : 'text-[#c084fc]'}`} />
+                    ) : (
+                      <Link className={`w-3 h-3 shrink-0 ${idx === autoCompleteIndex ? 'text-white' : 'text-[#ec4899]'}`} />
+                    )}
+                    <span className="truncate">{item.title}</span>
+                  </div>
+                  {item.isCanvas && (
+                    <span className={`text-[9px] font-mono px-1 py-0.2 rounded shrink-0 ml-1.5 ${
+                      idx === autoCompleteIndex ? 'bg-white/20 text-white' : 'bg-[#a855f7]/25 text-[#c084fc]'
+                    }`}>
+                      Canvas
+                    </span>
+                  )}
                 </button>
               ))}
             {autoCompleteType === 'tag' &&
@@ -2291,6 +3144,55 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         isSupported={speech.isSupported}
       />
 
+      {/* Floating Voice Reader Audio Player Bar */}
+      <VoiceReaderBar
+        isOpen={isVoiceReaderBarOpen}
+        isPlaying={voiceReader.isPlaying}
+        isPaused={voiceReader.isPaused}
+        currentSentence={voiceReader.currentSentence}
+        currentSentenceIndex={voiceReader.currentSentenceIndex}
+        totalSentences={voiceReader.totalSentences}
+        progress={voiceReader.progress}
+        rate={voiceReader.rate}
+        pitch={voiceReader.pitch}
+        selectedVoiceURI={voiceReader.selectedVoiceURI}
+        voices={voiceReader.voices}
+        readSourceType={voiceReader.readSourceType}
+        error={voiceReader.error}
+        noteTitle={note.title}
+        onPlay={() => {
+          let textToRead = content;
+          let isSelection = false;
+          if (textareaRef.current) {
+            const selStart = textareaRef.current.selectionStart;
+            const selEnd = textareaRef.current.selectionEnd;
+            if (selEnd > selStart) {
+              const selected = content.slice(selStart, selEnd).trim();
+              if (selected.length > 0) {
+                textToRead = selected;
+                isSelection = true;
+              }
+            }
+          }
+          voiceReader.play({ text: textToRead, title: note.title, isSelection });
+        }}
+        onPause={voiceReader.pause}
+        onResume={voiceReader.resume}
+        onStop={voiceReader.stop}
+        onSkipForward={voiceReader.skipForward}
+        onSkipBackward={voiceReader.skipBackward}
+        onSeek={voiceReader.seekSentence}
+        onChangeRate={voiceReader.setRate}
+        onChangePitch={voiceReader.setPitch}
+        onChangeVoice={voiceReader.setVoice}
+        onClearError={voiceReader.clearError}
+        onClose={() => {
+          voiceReader.stop();
+          setIsVoiceReaderBarOpen(false);
+        }}
+        isSupported={voiceReader.isSupported}
+      />
+
       {/* Insert Image Dialog Modal */}
       <InsertImageModal
         isOpen={isImageModalOpen}
@@ -2329,6 +3231,20 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         currentHeaderBannerIcon={note.bannerIcon}
         currentBannerHeight={note.bannerHeight}
         currentHeaderBannerHeight={note.bannerHeight}
+      />
+
+      {/* Insert Table Dialog Modal */}
+      <InsertTableModal
+        isOpen={isTableModalOpen}
+        onClose={() => setIsTableModalOpen(false)}
+        onInsertTable={handleInsertTableSyntax}
+      />
+
+      {/* Insert Canvas Dialog Modal */}
+      <InsertCanvasModal
+        isOpen={isCanvasModalOpen}
+        onClose={() => setIsCanvasModalOpen(false)}
+        onInsert={handleInsertCanvasSyntax}
       />
     </div>
   );

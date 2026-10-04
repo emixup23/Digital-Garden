@@ -14,7 +14,11 @@ import {
   Maximize2,
   Minimize2,
   Trash2,
+  Terminal,
+  Server,
+  Cloud,
 } from 'lucide-react';
+import { SiLinux, SiDocker, SiKubernetes } from 'react-icons/si';
 
 export const BANNER_COLOR_PRESETS: Record<
   string,
@@ -104,6 +108,12 @@ export const BANNER_ICONS: Record<string, React.ElementType> = {
   bookmark: Bookmark,
   compass: Compass,
   zap: Zap,
+  terminal: Terminal,
+  server: Server,
+  cloud: Cloud,
+  linux: SiLinux,
+  docker: SiDocker,
+  k8s: SiKubernetes,
 };
 
 // In-Note Banner Block Component

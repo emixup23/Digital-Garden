@@ -27,6 +27,8 @@ import {
   BookOpen,
   Mic,
   MicOff,
+  Headphones,
+  Boxes,
 } from 'lucide-react';
 import { ViewLayoutMode } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -54,6 +56,8 @@ interface TopNavProps {
   onToggleSimplifiedPreview?: (enabled?: boolean) => void;
   onToggleVoiceDictation?: () => void;
   isVoiceListening?: boolean;
+  onToggleVoiceReader?: () => void;
+  isVoiceReading?: boolean;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -79,6 +83,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   onToggleSimplifiedPreview,
   onToggleVoiceDictation,
   isVoiceListening = false,
+  onToggleVoiceReader,
+  isVoiceReading = false,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -250,6 +256,22 @@ export const TopNav: React.FC<TopNavProps> = ({
             <CalendarDays className="w-3.5 h-3.5" />
             <span className="hidden xl:inline text-[11px]">Agenda</span>
           </button>
+
+          <button
+            id="btn-layout-canvas"
+            type="button"
+            onClick={() => onChangeLayoutMode('canvas')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-xs transition-all duration-150 cursor-pointer active:scale-95 ${
+              layoutMode === 'canvas'
+                ? 'bg-[#ec4899] hover:bg-[#db2777] text-[#faf5ff] font-semibold shadow-xs hover:shadow-[0_0_10px_rgba(236,72,153,0.3)]'
+                : 'text-[#c084fc] hover:text-[#faf5ff] hover:bg-[#281745]'
+            }`}
+            style={layoutMode === 'canvas' ? { backgroundColor: '#ec4899', color: '#faf5ff' } : undefined}
+            title="Infinite Canvas & Visual Whiteboard"
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline text-[11px]">Canvas</span>
+          </button>
         </div>
 
         {/* Simplified Preview Indicator & Exit (when reading mode is active) */}
@@ -330,6 +352,30 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
 
+        {/* Voice Reader Quick Button */}
+        {onToggleVoiceReader && (
+          <button
+            id="btn-topnav-voice-reader"
+            type="button"
+            onClick={onToggleVoiceReader}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-xs font-medium transition-all duration-150 cursor-pointer active:scale-95 ${
+              isVoiceReading
+                ? 'bg-[#ec4899] text-white border-[#ec4899] shadow-md animate-pulse'
+                : 'bg-[#1f1338] hover:bg-[#281745] text-[#c084fc] hover:text-[#faf5ff] border-[#2e1c52] hover:border-[#ec4899]/60'
+            }`}
+            title={
+              isVoiceReading
+                ? 'Pause / Stop Voice Reader (Cmd+Shift+R)'
+                : 'Voice Reader: Listen to Note (Cmd+Shift+R)'
+            }
+          >
+            <Headphones className={`w-3.5 h-3.5 ${isVoiceReading ? 'text-white animate-bounce' : 'text-[#ec4899]'}`} />
+            <span className="hidden sm:inline font-['Space_Mono',monospace] text-[11px]">
+              {isVoiceReading ? 'Reading' : 'Reader'}
+            </span>
+          </button>
+        )}
+
         {/* Actions Dropdown Menu */}
         <div
           className="relative z-50"
@@ -402,6 +448,26 @@ export const TopNav: React.FC<TopNavProps> = ({
                       </span>
                     </div>
                     <span className="text-[10px] font-mono text-[#c084fc]/70 group-hover:text-[#faf5ff]">⌘⇧V</span>
+                  </button>
+                )}
+
+                {onToggleVoiceReader && (
+                  <button
+                    id="btn-dropdown-voice-reader"
+                    type="button"
+                    onClick={() => {
+                      closeDropdownImmediately();
+                      onToggleVoiceReader();
+                    }}
+                    className="w-full text-left px-3 py-2 flex items-center justify-between text-xs text-[#faf5ff] hover:bg-[#281748] hover:text-white rounded-[4px] transition-all duration-150 cursor-pointer group active:scale-[0.99]"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Headphones className={`w-4 h-4 ${isVoiceReading ? 'text-[#ec4899] animate-pulse' : 'text-[#ec4899]'} shrink-0 group-hover:scale-115 transition-all`} />
+                      <span className="font-semibold group-hover:translate-x-0.5 transition-transform">
+                        {isVoiceReading ? 'Stop Voice Reader' : 'Voice Reader (Text-to-Speech)'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-[#c084fc]/70 group-hover:text-[#faf5ff]">⌘⇧R</span>
                   </button>
                 )}
               </div>

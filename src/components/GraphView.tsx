@@ -21,6 +21,7 @@ import {
 import { NoteFile, Folder, GraphNode, GraphLink, ThemeConfig } from '../types';
 import { buildGraphData } from '../utils/parser';
 import { getTagColor, getTagHex, getTagBadgeStyle } from '../utils/tagColors';
+import { getFolderPath } from '../utils/searchEngine';
 
 interface GraphViewProps {
   notes: NoteFile[];
@@ -135,12 +136,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
     let nodes = [...rawNodes];
     let links = [...rawLinks];
 
-    // Filter by folder
+    // Filter by folder (including descendant subdirectories)
     if (selectedFolderFilter !== 'all') {
       if (selectedFolderFilter === 'root') {
         nodes = nodes.filter((n) => n.type === 'tag' || !n.folderId);
       } else {
-        nodes = nodes.filter((n) => n.type === 'tag' || n.folderId === selectedFolderFilter);
+        const isMatchingFolder = (folderId: string | null | undefined): boolean => {
+          let curr = folderId;
+          while (curr) {
+            if (curr === selectedFolderFilter) return true;
+            const parent = folders.find((f) => f.id === curr)?.parentId;
+            curr = parent;
+          }
+          return false;
+        };
+        nodes = nodes.filter((n) => n.type === 'tag' || isMatchingFolder(n.folderId));
       }
       const validNodeIds = new Set(nodes.map((n) => n.id));
       links = links.filter((l) => {
@@ -236,7 +246,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .force('collision', d3.forceCollide().radius(collisionRadius + nodeDotSize * 0.5));
 
     const primaryColor = theme?.primaryColor || '#ec4899';
-    const borderColor = theme?.borderColor || '#2e1c52';
+    const linkDefaultStroke = theme?.isDark === false ? '#94a3b8' : '#7c3aed';
 
     // Links container - No arrow heads, elegant clean lines
     const linkGroup = g.append('g').attr('class', 'links');
@@ -251,11 +261,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
           const tgt = typeof d.target === 'object' ? (d.target as GraphNode).title : String(d.target);
           return getTagColor(tgt).dot;
         }
-        return borderColor;
+        return linkDefaultStroke;
       })
       .attr('stroke-width', (d) => (d.bidirectional ? Math.max(linkStrokeWidth * 1.5, 0.15) : linkStrokeWidth))
       .attr('stroke-dasharray', (d) => (d.type === 'tag' ? '2 2' : 'none'))
-      .attr('opacity', (d) => (d.bidirectional ? 0.95 : d.type === 'tag' ? 0.5 : 0.65));
+      .attr('opacity', (d) => (d.bidirectional ? 0.95 : d.type === 'tag' ? 0.6 : 0.75));
 
     // Drag behavior
     const drag = d3
@@ -477,7 +487,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             <option value="root">Root only</option>
             {folders.map((f) => (
               <option key={f.id} value={f.id} className="bg-[#150d24] text-[#faf5ff]">
-                {f.name}
+                {getFolderPath(f.id, folders)}
               </option>
             ))}
           </select>

@@ -1,4 +1,5 @@
 import { NoteFile, GraphNode, GraphLink, BacklinkItem, OutgoingLinkItem, Folder } from '../types';
+import { parseCanvasLink, findCanvasByIdOrName, loadCanvasBoards } from './canvasStore';
 
 /**
  * Parses a markdown (.md) or .mf file content into frontmatter metadata and body text
@@ -232,7 +233,30 @@ export function findOutgoingLinks(sourceNote: NoteFile, allNotes: NoteFile[]): O
   const seenTargets = new Set<string>();
 
   for (const link of links) {
-    const cleanTarget = link.target.replace(/\.(md|mf)$/i, '').trim();
+    const rawTarget = link.target.trim();
+    const cleanTarget = rawTarget.replace(/\.(md|mf)$/i, '').trim();
+
+    // 1. Explicit Canvas Link: [[canvas:Canvas Name]] or [[Canvas.canvas]]
+    const parsedCanvas = parseCanvasLink(rawTarget);
+    if (parsedCanvas.isCanvas) {
+      const key = `canvas:${parsedCanvas.canvasIdentifier.toLowerCase()}`;
+      if (seenTargets.has(key)) continue;
+      seenTargets.add(key);
+
+      const savedCanvases = loadCanvasBoards();
+      const matchingCanvas = findCanvasByIdOrName(savedCanvases, parsedCanvas.canvasIdentifier);
+
+      result.push({
+        targetTitle: link.alias || (matchingCanvas ? matchingCanvas.name : parsedCanvas.canvasIdentifier),
+        targetNoteId: null,
+        isExisting: !!matchingCanvas,
+        isCanvas: true,
+        canvasId: matchingCanvas ? matchingCanvas.id : parsedCanvas.canvasIdentifier,
+        targetCardId: parsedCanvas.cardId || null,
+      });
+      continue;
+    }
+
     if (seenTargets.has(cleanTarget.toLowerCase())) continue;
     seenTargets.add(cleanTarget.toLowerCase());
 
@@ -241,6 +265,22 @@ export function findOutgoingLinks(sourceNote: NoteFile, allNotes: NoteFile[]): O
         n.title.toLowerCase() === cleanTarget.toLowerCase() ||
         n.name.replace(/\.(md|mf)$/i, '').toLowerCase() === cleanTarget.toLowerCase()
     );
+
+    // If note not found, check if it matches a canvas board name!
+    if (!matchingNote) {
+      const savedCanvases = loadCanvasBoards();
+      const matchingCanvas = findCanvasByIdOrName(savedCanvases, cleanTarget);
+      if (matchingCanvas) {
+        result.push({
+          targetTitle: link.alias ? `${matchingCanvas.name} (${link.alias})` : matchingCanvas.name,
+          targetNoteId: null,
+          isExisting: true,
+          isCanvas: true,
+          canvasId: matchingCanvas.id,
+        });
+        continue;
+      }
+    }
 
     result.push({
       targetTitle: link.alias ? `${cleanTarget} (${link.alias})` : cleanTarget,

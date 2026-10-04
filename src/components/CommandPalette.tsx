@@ -4,6 +4,7 @@ import {
   FileText,
   Tag,
   Folder,
+  FolderPlus,
   Plus,
   Network,
   X,
@@ -16,6 +17,7 @@ import {
   CalendarDays,
   BookOpen,
   Mic,
+  Headphones,
   Image as ImageIcon,
   SlidersHorizontal,
   Calendar,
@@ -23,6 +25,11 @@ import {
   Filter,
   Layers,
   CheckSquare,
+  FoldVertical,
+  UnfoldVertical,
+  Code2,
+  Table as TableIcon,
+  Boxes,
 } from 'lucide-react';
 import { NoteFile, Folder as FolderType } from '../types';
 import { getTagColor, getTagBadgeStyle, getTagHex } from '../utils/tagColors';
@@ -34,7 +41,9 @@ import {
   removeRecentSearch,
   clearRecentSearches,
   HighlightedText,
+  getFolderPath,
 } from '../utils/searchEngine';
+import { loadCanvasBoards } from '../utils/canvasStore';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -42,7 +51,8 @@ interface CommandPaletteProps {
   notes: NoteFile[];
   folders: FolderType[];
   onSelectNote: (noteId: string) => void;
-  onCreateNote: () => void;
+  onCreateNote: (folderId?: string | null) => void;
+  onCreateFolder?: (name: string, parentId?: string | null) => void;
   onOpenGraph: () => void;
   onOpenThemeEditor?: () => void;
   onOpenBackupCenter?: () => void;
@@ -52,14 +62,22 @@ interface CommandPaletteProps {
   onToggleRightSidebar?: () => void;
   onLockVault?: () => void;
   onOpenAgenda?: () => void;
+  onOpenCanvas?: () => void;
+  onNavigateToCanvas?: (canvasIdentifier: string, targetCardId?: string) => void;
   isSimplifiedPreview?: boolean;
   onToggleSimplifiedPreview?: () => void;
   onToggleVoiceDictation?: () => void;
   isVoiceListening?: boolean;
+  onToggleVoiceReader?: () => void;
+  isVoiceReading?: boolean;
   onTriggerInsertImage?: () => void;
   onTriggerInsertSelection?: () => void;
   onTriggerInsertDate?: () => void;
   onTriggerInsertBanner?: () => void;
+  onTriggerInsertTable?: () => void;
+  onTriggerTextColor?: () => void;
+  onTriggerFoldAllCode?: () => void;
+  onTriggerExpandAllCode?: () => void;
 }
 
 export interface PaletteItem {
@@ -83,6 +101,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   folders,
   onSelectNote,
   onCreateNote,
+  onCreateFolder,
   onOpenGraph,
   onOpenThemeEditor,
   onOpenBackupCenter,
@@ -92,14 +111,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleRightSidebar,
   onLockVault,
   onOpenAgenda,
+  onOpenCanvas,
+  onNavigateToCanvas,
   isSimplifiedPreview = false,
   onToggleSimplifiedPreview,
   onToggleVoiceDictation,
   isVoiceListening = false,
+  onToggleVoiceReader,
+  isVoiceReading = false,
   onTriggerInsertImage,
   onTriggerInsertSelection,
   onTriggerInsertDate,
   onTriggerInsertBanner,
+  onTriggerInsertTable,
+  onTriggerTextColor,
+  onTriggerFoldAllCode,
+  onTriggerExpandAllCode,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -164,11 +191,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           id: 'action-new',
           type: 'action',
           title: 'Create new note',
+          subtitle: 'Create a new markdown note at root',
           handler: () => {
             onCreateNote();
             onClose();
           },
         },
+        ...(onCreateFolder
+          ? [
+              {
+                id: 'action-new-folder',
+                type: 'action-folder',
+                title: 'Create new directory / subdirectory',
+                subtitle: 'Add a new directory or nested subdirectory in your vault',
+                handler: () => {
+                  const name = window.prompt('Enter new directory name:');
+                  if (name && name.trim()) {
+                    onCreateFolder(name.trim(), null);
+                  }
+                  onClose();
+                },
+              },
+            ]
+          : []),
         ...(onOpenAgenda
           ? [
               {
@@ -178,6 +223,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 subtitle: 'Daily planning, meetings, tasks, and calendar agenda',
                 handler: () => {
                   onOpenAgenda();
+                  onClose();
+                },
+              },
+            ]
+          : []),
+        ...(onOpenCanvas
+          ? [
+              {
+                id: 'action-canvas',
+                type: 'action-canvas',
+                title: 'Open Infinite Canvas & Whiteboard',
+                subtitle: 'Visual mindmap, card connections, sticky notes, and freehand sketches',
+                handler: () => {
+                  onOpenCanvas();
                   onClose();
                 },
               },
@@ -287,6 +346,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               },
             ]
           : []),
+        ...(onToggleVoiceReader
+          ? [
+              {
+                id: 'action-voice-reader',
+                type: 'action-voice-reader',
+                title: isVoiceReading ? 'Stop Voice Reader (Text-to-Speech)' : 'Start Voice Reader (Text-to-Speech)',
+                subtitle: 'Read aloud note text or active selection with speech player (Shortcut: ⌘⇧R)',
+                handler: () => {
+                  onToggleVoiceReader();
+                  onClose();
+                },
+              },
+            ]
+          : []),
         ...(onTriggerInsertImage
           ? [
               {
@@ -301,6 +374,62 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               },
             ]
           : []),
+        ...(onTriggerInsertTable
+          ? [
+              {
+                id: 'action-insert-table',
+                type: 'action-table',
+                title: 'Insert Markdown Table',
+                subtitle: 'Create customizable grid with columns, rows, alignments, and presets (Shortcut: Alt+T)',
+                handler: () => {
+                  onTriggerInsertTable();
+                  onClose();
+                },
+              },
+            ]
+          : []),
+        ...(onTriggerTextColor
+          ? [
+              {
+                id: 'action-text-color',
+                type: 'action-text-color',
+                title: 'Change Text Color & Highlight',
+                subtitle: 'Apply cyber neon colors or text highlights to selection (Shortcut: Alt+C)',
+                handler: () => {
+                  onTriggerTextColor();
+                  onClose();
+                },
+              },
+            ]
+          : []),
+        ...(onTriggerFoldAllCode
+          ? [
+              {
+                id: 'action-fold-all-code',
+                type: 'action-fold-code',
+                title: 'Fold All Code Blocks (Markdown)',
+                subtitle: 'Collapse all code blocks in active note for quick document scanning (Shortcut: Alt+[)',
+                handler: () => {
+                  onTriggerFoldAllCode();
+                  onClose();
+                },
+              },
+            ]
+          : []),
+        ...(onTriggerExpandAllCode
+          ? [
+              {
+                id: 'action-expand-all-code',
+                type: 'action-expand-code',
+                title: 'Expand All Code Blocks (Markdown)',
+                subtitle: 'Expand all code blocks in active note (Shortcut: Alt+])',
+                handler: () => {
+                  onTriggerExpandAllCode();
+                  onClose();
+                },
+              },
+            ]
+          : []),
         {
           id: 'action-graph',
           type: 'action',
@@ -310,11 +439,25 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             onClose();
           },
         },
+        ...(onOpenCanvas
+          ? [
+              {
+                id: 'action-canvas-default',
+                type: 'action-canvas',
+                title: 'Open Canvas Whiteboards',
+                subtitle: 'Visual spatial whiteboard for notes, stickies, and diagrams',
+                handler: () => {
+                  onOpenCanvas();
+                  onClose();
+                },
+              },
+            ]
+          : []),
         ...notes.slice(0, 8).map((n) => ({
           id: n.id,
           type: 'note',
           title: n.title,
-          subtitle: n.folderId ? folders.find((f) => f.id === n.folderId)?.name : 'Root',
+          subtitle: getFolderPath(n.folderId, folders),
           tags: n.tags,
           icon: n.icon,
           iconColor: n.iconColor,
@@ -328,6 +471,49 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
     const q = query.toLowerCase();
     const items: PaletteItem[] = [];
+
+    // Code folding commands search match
+    if (
+      'fold'.includes(q) ||
+      'collapse'.includes(q) ||
+      'fold all code'.includes(q) ||
+      'collapse code'.includes(q) ||
+      'code folding'.includes(q)
+    ) {
+      if (onTriggerFoldAllCode) {
+        items.push({
+          id: 'action-fold-all-code-search',
+          type: 'action-fold-code',
+          title: 'Fold All Code Blocks (Markdown)',
+          subtitle: 'Collapse all code blocks in active note for quick document scanning (Shortcut: Alt+[)',
+          handler: () => {
+            onTriggerFoldAllCode();
+            onClose();
+          },
+        });
+      }
+    }
+
+    if (
+      'expand'.includes(q) ||
+      'unfold'.includes(q) ||
+      'expand all code'.includes(q) ||
+      'unfold code'.includes(q) ||
+      'open code'.includes(q)
+    ) {
+      if (onTriggerExpandAllCode) {
+        items.push({
+          id: 'action-expand-all-code-search',
+          type: 'action-expand-code',
+          title: 'Expand All Code Blocks (Markdown)',
+          subtitle: 'Expand all code blocks in active note (Shortcut: Alt+])',
+          handler: () => {
+            onTriggerExpandAllCode();
+            onClose();
+          },
+        });
+      }
+    }
 
     // Insert Image action search match
     if (
@@ -420,6 +606,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       }
     }
 
+    // Insert Table match
+    if (
+      'table'.includes(q) ||
+      'insert table'.includes(q) ||
+      'grid'.includes(q) ||
+      'matrix'.includes(q) ||
+      'csv'.includes(q) ||
+      'spreadsheet'.includes(q)
+    ) {
+      if (onTriggerInsertTable) {
+        items.push({
+          id: 'action-table-search',
+          type: 'action-table',
+          title: 'Insert Markdown Table',
+          subtitle: 'Configure rows, columns, alignments, and DevOps/cloud presets (Shortcut: Alt+T)',
+          handler: () => {
+            onTriggerInsertTable();
+            onClose();
+          },
+        });
+      }
+    }
+
     // Icon customization search match
     if (
       'icon'.includes(q) ||
@@ -440,6 +649,33 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           },
         });
       }
+    }
+
+    // Create Directory search match
+    if (
+      onCreateFolder &&
+      ('folder'.includes(q) ||
+        'dir'.includes(q) ||
+        'directory'.includes(q) ||
+        'mkdir'.includes(q) ||
+        'new folder'.includes(q) ||
+        'new dir'.includes(q) ||
+        'create folder'.includes(q) ||
+        'subdirectory'.includes(q))
+    ) {
+      items.push({
+        id: 'action-create-folder-search',
+        type: 'action-folder',
+        title: 'Create new directory / subdirectory',
+        subtitle: 'Add a new directory at root or nested in an existing folder',
+        handler: () => {
+          const name = window.prompt('Enter new directory name:');
+          if (name && name.trim()) {
+            onCreateFolder(name.trim(), null);
+          }
+          onClose();
+        },
+      });
     }
 
     // Theme match
@@ -680,6 +916,61 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       });
     }
 
+    // Matching directories
+    if (searchCategory === 'all') {
+      folders.forEach((f) => {
+        const fullPath = getFolderPath(f.id, folders);
+        if (
+          f.name.toLowerCase().includes(q) ||
+          fullPath.toLowerCase().includes(q)
+        ) {
+          items.push({
+            id: `folder-${f.id}`,
+            type: 'folder',
+            title: f.name,
+            subtitle: `Directory: ${fullPath} • Click to create note in this directory`,
+            icon: f.icon,
+            iconColor: f.iconColor,
+            matchedFields: ['folder'],
+            handler: () => {
+              saveRecentSearch(query);
+              onCreateNote(f.id);
+              onClose();
+            },
+          });
+        }
+      });
+    }
+
+    // Matching canvas boards
+    if (searchCategory === 'all') {
+      const canvasBoards = loadCanvasBoards(notes);
+      canvasBoards.forEach((b) => {
+        if (
+          b.name.toLowerCase().includes(q) ||
+          q.includes('canvas') ||
+          q.includes('board') ||
+          q.includes('whiteboard')
+        ) {
+          items.push({
+            id: `canvas-${b.id}`,
+            type: 'canvas',
+            title: b.name,
+            subtitle: `Canvas Whiteboard • ${b.nodes?.length || 0} cards • ${b.edges?.length || 0} connections`,
+            handler: () => {
+              saveRecentSearch(query);
+              if (onNavigateToCanvas) {
+                onNavigateToCanvas(b.id);
+              } else if (onOpenCanvas) {
+                onOpenCanvas();
+              }
+              onClose();
+            },
+          });
+        }
+      });
+    }
+
     return items;
   }, [
     query,
@@ -687,7 +978,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     folders,
     searchCategory,
     onCreateNote,
+    onCreateFolder,
     onOpenGraph,
+    onOpenCanvas,
+    onNavigateToCanvas,
     onOpenThemeEditor,
     onOpenBackupCenter,
     onCustomizeNoteIcon,
@@ -700,6 +994,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onTriggerInsertSelection,
     onTriggerInsertDate,
     onTriggerInsertBanner,
+    onTriggerInsertTable,
+    onTriggerTextColor,
+    onTriggerFoldAllCode,
+    onTriggerExpandAllCode,
     onOpenAgenda,
     isSimplifiedPreview,
     onToggleSimplifiedPreview,
@@ -894,8 +1192,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   {item.type === 'action-agenda' && (
                     <CalendarDays className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
                   )}
+                  {(item.type === 'action-canvas' || item.type === 'canvas') && (
+                    <Boxes className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
                   {item.type === 'action-theme' && (
                     <Palette className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
+                  {item.type === 'folder' && (
+                    <CustomIconRenderer
+                      iconName={item.icon}
+                      color={idx === selectedIndex ? '#faf5ff' : item.iconColor || '#ec4899'}
+                      defaultIcon={Folder}
+                      className="w-4 h-4 shrink-0"
+                    />
+                  )}
+                  {item.type === 'action-folder' && (
+                    <FolderPlus className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
                   )}
                   {item.type === 'action-backup' && (
                     <HardDrive className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
@@ -912,6 +1224,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   {item.type === 'action-voice' && (
                     <Mic className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
                   )}
+                  {item.type === 'action-voice-reader' && (
+                    <Headphones className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
                   {item.type === 'action-lock' && (
                     <Lock className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-rose-400'}`} />
                   )}
@@ -926,6 +1241,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   )}
                   {item.type === 'action-banner' && (
                     <Palette className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
+                  {item.type === 'action-table' && (
+                    <TableIcon className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
+                  {item.type === 'action-text-color' && (
+                    <Palette className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
+                  {item.type === 'action-fold-code' && (
+                    <FoldVertical className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#ec4899]'}`} />
+                  )}
+                  {item.type === 'action-expand-code' && (
+                    <UnfoldVertical className={`w-4 h-4 shrink-0 ${idx === selectedIndex ? 'text-[#faf5ff]' : 'text-[#38bdf8]'}`} />
                   )}
 
                   <div className="truncate flex-1 min-w-0">

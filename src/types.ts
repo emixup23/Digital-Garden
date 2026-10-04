@@ -62,9 +62,70 @@ export interface OutgoingLinkItem {
   targetTitle: string;
   targetNoteId: string | null; // null if uncreated/ghost note
   isExisting: boolean;
+  isCanvas?: boolean;
+  canvasId?: string | null;
+  targetCardId?: string | null;
 }
 
-export type ViewLayoutMode = 'workspace' | 'split' | 'graph' | 'agenda';
+export type ViewLayoutMode = 'workspace' | 'split' | 'graph' | 'agenda' | 'canvas';
+
+export type CanvasNodeType = 'note' | 'text' | 'sticky' | 'group' | 'link';
+
+export interface CanvasNode {
+  id: string;
+  type: CanvasNodeType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  title?: string;
+  content?: string;
+  noteId?: string; // id of referenced NoteFile if type === 'note'
+  color?: string; // accent color (hex)
+  bgColor?: string;
+  borderColor?: string;
+  groupId?: string | null;
+  zIndex?: number;
+}
+
+export type CanvasEdgeDirection = 'forward' | 'bidirectional' | 'none';
+export type CanvasEdgeStyle = 'bezier' | 'straight' | 'step';
+
+export interface CanvasEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  fromSide?: 'top' | 'right' | 'bottom' | 'left';
+  toSide?: 'top' | 'right' | 'bottom' | 'left';
+  label?: string;
+  color?: string;
+  style?: CanvasEdgeStyle;
+  direction?: CanvasEdgeDirection;
+  animated?: boolean;
+}
+
+export interface CanvasDrawingStroke {
+  id: string;
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+}
+
+export interface CanvasBoard {
+  id: string;
+  name: string;
+  description?: string;
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+  drawings?: CanvasDrawingStroke[];
+  viewport: {
+    x: number;
+    y: number;
+    zoom: number;
+  };
+  createdAt: number;
+  updatedAt: number;
+}
 export type EditorMode = 'edit' | 'split' | 'preview';
 
 export interface ThemeConfig {

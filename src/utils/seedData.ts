@@ -25,6 +25,14 @@ export const INITIAL_FOLDERS: Folder[] = [
     iconColor: '#10b981',
     createdAt: Date.now() - 86400000 * 5,
   },
+  {
+    id: 'folder-infra',
+    name: '04 - Cloud & Linux Infra',
+    parentId: null,
+    icon: 'SiLinux',
+    iconColor: '#38bdf8',
+    createdAt: Date.now() - 86400000 * 4,
+  },
 ];
 
 export const INITIAL_NOTES: NoteFile[] = [
@@ -51,6 +59,13 @@ A Personal Knowledge Management (PKM) system is an interconnected collection of 
 1. **Atomic Notes**: Break thoughts down into self-contained conceptual units as in the [[Zettelkasten Method]].
 2. **Organic Structure**: Rather than rigid folder silos, rely on [[Bidirectional Linking]] and associative tags.
 3. **Exploratory Navigation**: Traversing insights through [[Graph Topology]] reveals emergent links between domains.
+
+## Typography & Visual Styling
+- <span style="color: #ec4899">Cyber Pink</span> for key breakthroughs & core priorities
+- <span style="color: #38bdf8">Cyber Cyan</span> for systems architecture & technical definitions
+- <span style="color: #4ade80">Matrix Green</span> for verified facts & action items
+- ==Highlighted Callouts== for quick visual reference
+- Press **⌘⇧R** or tap **Voice Reader** in the top bar to listen to this note read aloud!
 
 ## Related Frameworks
 - See also [[Digital Garden Architecture]] for how knowledge is cultivated over time.
@@ -418,4 +433,76 @@ Direct link back to [[Personal Knowledge Management]].
 
 #project #roadmap #pkm`,
   },
+  {
+    id: 'note-linux-cloud-infra',
+    name: 'Cloud & Linux Infrastructure.md',
+    folderId: 'folder-infra',
+    title: 'Cloud & Linux Infrastructure',
+    tags: ['linux', 'sysadmin', 'cloud', 'devops'],
+    icon: 'SiKubernetes',
+    iconColor: '#38bdf8',
+    createdAt: Date.now() - 86400000 * 2,
+    updatedAt: Date.now(),
+    content: `---
+title: "Cloud & Linux Infrastructure"
+tags: ["linux", "sysadmin", "cloud", "devops"]
+date: "2026-09-20"
+---
+# Cloud & Linux Infrastructure
+
+A reference architecture for modern container orchestration, enterprise Linux distributions, and multi-cloud infrastructure.
+
+## Core Stack & Tooling
+- **Operating Systems**: [[Ubuntu]] LTS, [[Debian]] Stable, and [[Arch Linux]] for edge builds.
+- **Orchestration**: [[Kubernetes]] clusters managed with Helm and Podman rootless containers.
+- **Reverse Proxies & Ingress**: High-performance routing via [[Nginx]] and Caddy with automated [[Let's Encrypt]] TLS.
+- **Multi-Cloud Deployments**: Hybrid architecture across **AWS** (S3, EC2), **Google Cloud** (GKE, Cloud Run), and **Cloudflare Workers**.
+- **Observability**: Real-time telemetry pipeline powered by **Prometheus** metrics and **Grafana** dashboards.
+
+## Production Server Fleet & Deployment Matrix
+| Hostname | IP Address | OS / Distro | Services Running | Health Status |
+| :--- | :--- | :--- | :--- | :---: |
+| \`prod-web-01\` | \`10.0.1.10\` | Ubuntu 24.04 LTS | Nginx reverse proxy, Certbot SSL | 🟢 Healthy |
+| \`prod-db-primary\` | \`10.0.2.15\` | Debian 12 Bookworm | PostgreSQL 16, Redis Cache | 🟢 Healthy |
+| \`k8s-control-01\` | \`10.0.3.20\` | Rocky Linux 9 | Kubernetes API Server, etcd | 🟢 Active |
+| \`edge-wg-gateway\` | \`10.0.4.50\` | Alpine Linux 3.20 | WireGuard VPN, DNS Resolver | 🟢 Online |
+| \`backup-storage\` | \`10.0.5.100\` | Arch Linux / ZFS | BorgBackup, MinIO Object S3 | 🟡 Syncing |
+
+## System Administration Cheat Sheet
+\`\`\`bash
+# Check systemd service status and logs
+systemctl status nginx.service
+journalctl -u nginx.service -f --lines=50
+
+# Inspect active network sockets and WireGuard status
+ss -tulpn | grep ':443'
+wg show
+
+# Manage container pods rootless
+podman ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"
+\`\`\`
+
+> Tip: Customize any folder or note icon using the expanded Icon Picker with **Simple Icons**, **Font Awesome 6**, **VS Code Codicons**, **Devicons**, and **Lucide**!
+
+#linux #sysadmin #cloud #devops #infrastructure`,
+  },
 ];
+
+export const DEMO_NOTE_IDS: ReadonlySet<string> = new Set(INITIAL_NOTES.map((n) => n.id));
+export const DEMO_FOLDER_IDS: ReadonlySet<string> = new Set(INITIAL_FOLDERS.map((f) => f.id));
+
+export function isDemoNote(note: NoteFile): boolean {
+  if (DEMO_NOTE_IDS.has(note.id)) return true;
+  return INITIAL_NOTES.some(
+    (seed) => seed.id === note.id || (seed.title === note.title && seed.folderId === note.folderId)
+  );
+}
+
+export function isDemoFolder(folder: Folder): boolean {
+  return DEMO_FOLDER_IDS.has(folder.id);
+}
+
+export function isDemoFolderId(folderId: string | null | undefined): boolean {
+  if (!folderId) return false;
+  return DEMO_FOLDER_IDS.has(folderId);
+}

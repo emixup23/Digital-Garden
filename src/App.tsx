@@ -21,6 +21,7 @@ import { NoteEditor } from './components/NoteEditor';
 import { BacklinksPanel } from './components/BacklinksPanel';
 import { GraphView } from './components/GraphView';
 import { AgendaView } from './components/AgendaView';
+import { CanvasView } from './components/CanvasView';
 import { CommandPalette } from './components/CommandPalette';
 import { ThemeEditor } from './components/ThemeEditor';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
@@ -31,6 +32,12 @@ import { FileQuestion, Plus } from 'lucide-react';
 import { isAuthenticated, getAuthUser, logout, AuthUser } from './utils/auth';
 import { LoginScreen } from './components/LoginScreen';
 import { preloadAttachments } from './utils/attachmentStore';
+import {
+  loadCanvasBoards,
+  saveCanvasBoards,
+  createNewCanvas,
+  saveActiveCanvasId,
+} from './utils/canvasStore';
 
 export default function App() {
   const [isAuth, setIsAuth] = useState<boolean>(() => isAuthenticated());
@@ -43,6 +50,8 @@ export default function App() {
   });
 
   const [layoutMode, setLayoutMode] = useState<ViewLayoutMode>('workspace');
+  const [targetCanvasId, setTargetCanvasId] = useState<string | null>(null);
+  const [targetCanvasNodeId, setTargetCanvasNodeId] = useState<string | null>(null);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
@@ -80,11 +89,27 @@ export default function App() {
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [dictateTriggerCount, setDictateTriggerCount] = useState(0);
 
+  // Voice Text-to-Speech Reader state
+  const [isVoiceReading, setIsVoiceReading] = useState(false);
+  const [voiceReaderTriggerCount, setVoiceReaderTriggerCount] = useState(0);
+
   // Insert image trigger
   const [insertImageTriggerCount, setInsertImageTriggerCount] = useState(0);
   const [insertSelectionTriggerCount, setInsertSelectionTriggerCount] = useState(0);
   const [insertDateTriggerCount, setInsertDateTriggerCount] = useState(0);
   const [insertBannerTriggerCount, setInsertBannerTriggerCount] = useState(0);
+  const [insertTableTriggerCount, setInsertTableTriggerCount] = useState(0);
+  const [textColorTriggerCount, setTextColorTriggerCount] = useState(0);
+  const [foldAllCodeTriggerCount, setFoldAllCodeTriggerCount] = useState(0);
+  const [expandAllCodeTriggerCount, setExpandAllCodeTriggerCount] = useState(0);
+
+  const handleTriggerFoldAllCode = () => {
+    setFoldAllCodeTriggerCount((prev) => prev + 1);
+  };
+
+  const handleTriggerExpandAllCode = () => {
+    setExpandAllCodeTriggerCount((prev) => prev + 1);
+  };
 
   const handleTriggerInsertImage = () => {
     if (!activeNote) {
@@ -138,6 +163,32 @@ export default function App() {
     setInsertBannerTriggerCount((prev) => prev + 1);
   };
 
+  const handleTriggerInsertTable = () => {
+    if (!activeNote) {
+      const defaultName = `Note ${notes.length + 1}`;
+      const newNote = createNewNote(defaultName, null);
+      setNotes((prev) => [newNote, ...prev]);
+      setActiveNoteId(newNote.id);
+      setLayoutMode('workspace');
+    } else if (layoutMode !== 'workspace' && layoutMode !== 'split') {
+      setLayoutMode('workspace');
+    }
+    setInsertTableTriggerCount((prev) => prev + 1);
+  };
+
+  const handleTriggerTextColor = () => {
+    if (!activeNote) {
+      const defaultName = `Note ${notes.length + 1}`;
+      const newNote = createNewNote(defaultName, null);
+      setNotes((prev) => [newNote, ...prev]);
+      setActiveNoteId(newNote.id);
+      setLayoutMode('workspace');
+    } else if (layoutMode !== 'workspace' && layoutMode !== 'split') {
+      setLayoutMode('workspace');
+    }
+    setTextColorTriggerCount((prev) => prev + 1);
+  };
+
   const handleToggleVoiceDictation = () => {
     if (!activeNote) {
       const defaultName = `Voice Note ${notes.length + 1}`;
@@ -149,6 +200,19 @@ export default function App() {
       setLayoutMode('workspace');
     }
     setDictateTriggerCount((prev) => prev + 1);
+  };
+
+  const handleToggleVoiceReader = () => {
+    if (!activeNote) {
+      const defaultName = `Note ${notes.length + 1}`;
+      const newNote = createNewNote(defaultName, null);
+      setNotes((prev) => [newNote, ...prev]);
+      setActiveNoteId(newNote.id);
+      setLayoutMode('workspace');
+    } else if (layoutMode !== 'workspace' && layoutMode !== 'split') {
+      setLayoutMode('workspace');
+    }
+    setVoiceReaderTriggerCount((prev) => prev + 1);
   };
 
   const handleToggleSimplifiedPreview = (enable?: boolean) => {
@@ -216,6 +280,9 @@ export default function App() {
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
         handleToggleVoiceDictation();
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        handleToggleVoiceReader();
       } else if (e.key === 'Escape' && isSimplifiedPreview) {
         e.preventDefault();
         handleToggleSimplifiedPreview(false);
@@ -287,6 +354,23 @@ export default function App() {
     }
   };
 
+  const handleNavigateToCanvas = (canvasIdentifier: string, targetCardId?: string) => {
+    setTargetCanvasId(canvasIdentifier);
+    setTargetCanvasNodeId(targetCardId || null);
+    setLayoutMode('canvas');
+  };
+
+  const handleCreateCanvasFromLink = (canvasName: string) => {
+    const existing = loadCanvasBoards(notes);
+    const newBoard = createNewCanvas(canvasName);
+    const updated = [...existing, newBoard];
+    saveCanvasBoards(updated);
+    saveActiveCanvasId(newBoard.id);
+    setTargetCanvasId(newBoard.id);
+    setTargetCanvasNodeId(null);
+    setLayoutMode('canvas');
+  };
+
   const handleCreateNewNote = (folderId: string | null = null) => {
     const defaultName = `Note ${notes.length + 1}`;
     const newNote = createNewNote(defaultName, folderId);
@@ -322,16 +406,45 @@ export default function App() {
   };
 
   const handleDeleteFolder = (folderId: string) => {
-    // Reassign notes in folder to root
+    // Collect all descendant folder IDs to delete cleanly
+    const getAllDescendantFolderIds = (id: string, currentFolders: Folder[]): string[] => {
+      const children = currentFolders.filter((f) => f.parentId === id);
+      return [id, ...children.flatMap((c) => getAllDescendantFolderIds(c.id, currentFolders))];
+    };
+    const folderIdsToDelete = new Set(getAllDescendantFolderIds(folderId, folders));
+
+    // Reassign notes in folder and all descendant subfolders to root
     setNotes((prev) =>
-      prev.map((n) => (n.folderId === folderId ? { ...n, folderId: null } : n))
+      prev.map((n) => (n.folderId && folderIdsToDelete.has(n.folderId) ? { ...n, folderId: null } : n))
     );
-    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setFolders((prev) => prev.filter((f) => !folderIdsToDelete.has(f.id)));
   };
 
   const handleRenameFolder = (folderId: string, newName: string) => {
     setFolders((prev) =>
       prev.map((f) => (f.id === folderId ? { ...f, name: newName } : f))
+    );
+  };
+
+  const handleMoveFolderToParent = (folderId: string, newParentId: string | null) => {
+    if (folderId === newParentId) return;
+
+    // Disallow moving a directory into its own descendant (prevents cycle)
+    if (newParentId) {
+      let curr = folders.find((f) => f.id === newParentId);
+      const visited = new Set<string>();
+      while (curr && !visited.has(curr.id)) {
+        if (curr.id === folderId) {
+          // Cycle detected!
+          return;
+        }
+        visited.add(curr.id);
+        curr = curr.parentId ? folders.find((f) => f.id === curr.parentId) : undefined;
+      }
+    }
+
+    setFolders((prev) =>
+      prev.map((f) => (f.id === folderId ? { ...f, parentId: newParentId } : f))
     );
   };
 
@@ -345,13 +458,23 @@ export default function App() {
 
   const handleMoveFolder = (folderId: string, direction: 'up' | 'down') => {
     setFolders((prev) => {
-      const idx = prev.findIndex((f) => f.id === folderId);
-      if (idx === -1) return prev;
-      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const folder = prev.find((f) => f.id === folderId);
+      if (!folder) return prev;
+      const siblings = prev.filter((f) => (f.parentId || null) === (folder.parentId || null));
+      const siblingIdx = siblings.findIndex((f) => f.id === folderId);
+      const targetSiblingIdx = direction === 'up' ? siblingIdx - 1 : siblingIdx + 1;
+      if (targetSiblingIdx < 0 || targetSiblingIdx >= siblings.length) return prev;
+
+      const targetSibling = siblings[targetSiblingIdx];
+      const originalIdx = prev.findIndex((f) => f.id === folderId);
       const next = [...prev];
-      const [moved] = next.splice(idx, 1);
-      next.splice(targetIdx, 0, moved);
+      const [moved] = next.splice(originalIdx, 1);
+      const newTargetIdx = next.findIndex((f) => f.id === targetSibling.id);
+      if (direction === 'up') {
+        next.splice(newTargetIdx, 0, moved);
+      } else {
+        next.splice(newTargetIdx + 1, 0, moved);
+      }
       return next;
     });
   };
@@ -549,6 +672,8 @@ export default function App() {
         onToggleSimplifiedPreview={handleToggleSimplifiedPreview}
         onToggleVoiceDictation={handleToggleVoiceDictation}
         isVoiceListening={isVoiceListening}
+        onToggleVoiceReader={handleToggleVoiceReader}
+        isVoiceReading={isVoiceReading}
       />
 
       {/* Main Workspace Body */}
@@ -584,6 +709,7 @@ export default function App() {
                 onReorderFolders={handleReorderFolders}
                 onReorderNotes={handleReorderNotes}
                 onMoveFolder={handleMoveFolder}
+                onMoveFolderToParent={handleMoveFolderToParent}
                 onMoveNote={handleMoveNote}
                 onMoveNoteToFolder={handleMoveNoteToFolder}
                 selectedTagFilter={selectedTagFilter}
@@ -596,6 +722,8 @@ export default function App() {
                 onToggleCollapse={handleToggleLeftSidebar}
                 onOpenAgenda={() => setLayoutMode('agenda')}
                 isAgendaActive={true}
+                onOpenCanvas={() => setLayoutMode('canvas')}
+                isCanvasActive={false}
               />
             )}
             <AgendaView
@@ -606,6 +734,58 @@ export default function App() {
               onCreateNote={handleCreateNewNote}
               onSelectNote={handleSelectNote}
               theme={activeTheme}
+            />
+          </div>
+        ) : layoutMode === 'canvas' ? (
+          <div className="w-full h-full flex overflow-hidden">
+            {/* Sidebar Explorer in Canvas Mode */}
+            {isLeftSidebarOpen && (
+              <Sidebar
+                notes={notes}
+                folders={folders}
+                activeNoteId={activeNoteId}
+                onSelectNote={handleSelectNote}
+                onCreateNote={handleCreateNewNote}
+                onCreateFolder={handleCreateFolder}
+                onDeleteFolder={handleDeleteFolder}
+                onRenameFolder={handleRenameFolder}
+                onImportNote={handleImportNote}
+                onCustomizeFolderIcon={handleOpenFolderIconPicker}
+                onCustomizeNoteIcon={handleOpenNoteIconPicker}
+                onReorderFolders={handleReorderFolders}
+                onReorderNotes={handleReorderNotes}
+                onMoveFolder={handleMoveFolder}
+                onMoveFolderToParent={handleMoveFolderToParent}
+                onMoveNote={handleMoveNote}
+                onMoveNoteToFolder={handleMoveNoteToFolder}
+                selectedTagFilter={selectedTagFilter}
+                onSelectTagFilter={(tag) => {
+                  setSelectedTagFilter(tag);
+                  setLayoutMode('workspace');
+                }}
+                onOpenFullGraph={() => setLayoutMode('graph')}
+                onOpenBackupCenter={() => setIsBackupModalOpen(true)}
+                onToggleCollapse={handleToggleLeftSidebar}
+                onOpenAgenda={() => setLayoutMode('agenda')}
+                isAgendaActive={false}
+                onOpenCanvas={() => setLayoutMode('canvas')}
+                isCanvasActive={true}
+              />
+            )}
+            <CanvasView
+              notes={notes}
+              folders={folders}
+              onSelectNote={(noteId) => {
+                handleSelectNote(noteId);
+              }}
+              onNavigateToNote={(noteId) => {
+                handleSelectNote(noteId);
+                setLayoutMode('workspace');
+              }}
+              onClose={() => setLayoutMode('workspace')}
+              theme={activeTheme}
+              targetCanvasId={targetCanvasId}
+              targetNodeId={targetCanvasNodeId}
             />
           </div>
         ) : (
@@ -627,6 +807,7 @@ export default function App() {
                 onReorderFolders={handleReorderFolders}
                 onReorderNotes={handleReorderNotes}
                 onMoveFolder={handleMoveFolder}
+                onMoveFolderToParent={handleMoveFolderToParent}
                 onMoveNote={handleMoveNote}
                 onMoveNoteToFolder={handleMoveNoteToFolder}
                 selectedTagFilter={selectedTagFilter}
@@ -636,6 +817,12 @@ export default function App() {
                 onToggleCollapse={handleToggleLeftSidebar}
                 onOpenAgenda={() => setLayoutMode('agenda')}
                 isAgendaActive={false}
+                onOpenCanvas={() => {
+                  setTargetCanvasId(null);
+                  setTargetCanvasNodeId(null);
+                  setLayoutMode('canvas');
+                }}
+                isCanvasActive={false}
               />
             )}
 
@@ -656,6 +843,8 @@ export default function App() {
                       onDeleteNote={handleDeleteNote}
                       onNavigateToNote={handleNavigateToNote}
                       onCreateNoteFromLink={handleCreateNoteFromLink}
+                      onNavigateToCanvas={handleNavigateToCanvas}
+                      onCreateCanvasFromLink={handleCreateCanvasFromLink}
                       onCustomizeIcon={() => activeNote && handleOpenNoteIconPicker(activeNote)}
                       isLeftSidebarOpen={isLeftSidebarOpen}
                       onToggleLeftSidebar={handleToggleLeftSidebar}
@@ -665,10 +854,16 @@ export default function App() {
                       onToggleSimplifiedPreview={handleToggleSimplifiedPreview}
                       dictateTriggerCount={dictateTriggerCount}
                       onVoiceListeningChange={setIsVoiceListening}
+                      voiceReaderTriggerCount={voiceReaderTriggerCount}
+                      onVoiceReadingChange={setIsVoiceReading}
                       insertImageTriggerCount={insertImageTriggerCount}
                       insertSelectionTriggerCount={insertSelectionTriggerCount}
                       insertDateTriggerCount={insertDateTriggerCount}
                       insertBannerTriggerCount={insertBannerTriggerCount}
+                      insertTableTriggerCount={insertTableTriggerCount}
+                      textColorTriggerCount={textColorTriggerCount}
+                      foldAllTriggerCount={foldAllCodeTriggerCount}
+                      expandAllTriggerCount={expandAllCodeTriggerCount}
                     />
                   </div>
 
@@ -680,6 +875,8 @@ export default function App() {
                       folders={folders}
                       onNavigateToNote={handleNavigateToNote}
                       onCreateNote={handleCreateNoteFromLink}
+                      onNavigateToCanvas={handleNavigateToCanvas}
+                      onCreateCanvas={handleCreateCanvasFromLink}
                       onOpenFullGraph={() => setLayoutMode('graph')}
                       theme={activeTheme}
                       onClose={handleToggleRightSidebar}
@@ -734,7 +931,8 @@ export default function App() {
         notes={notes}
         folders={folders}
         onSelectNote={handleSelectNote}
-        onCreateNote={() => handleCreateNewNote(null)}
+        onCreateNote={(folderId) => handleCreateNewNote(folderId || null)}
+        onCreateFolder={handleCreateFolder}
         onOpenGraph={() => setLayoutMode('graph')}
         onOpenThemeEditor={() => setIsThemeEditorOpen(true)}
         onOpenBackupCenter={() => setIsBackupModalOpen(true)}
@@ -747,14 +945,26 @@ export default function App() {
         onToggleRightSidebar={handleToggleRightSidebar}
         onLockVault={handleLockVault}
         onOpenAgenda={() => setLayoutMode('agenda')}
+        onOpenCanvas={() => {
+          setTargetCanvasId(null);
+          setTargetCanvasNodeId(null);
+          setLayoutMode('canvas');
+        }}
+        onNavigateToCanvas={handleNavigateToCanvas}
         isSimplifiedPreview={isSimplifiedPreview}
         onToggleSimplifiedPreview={handleToggleSimplifiedPreview}
         onToggleVoiceDictation={handleToggleVoiceDictation}
         isVoiceListening={isVoiceListening}
+        onToggleVoiceReader={handleToggleVoiceReader}
+        isVoiceReading={isVoiceReading}
         onTriggerInsertImage={handleTriggerInsertImage}
         onTriggerInsertSelection={handleTriggerInsertSelection}
         onTriggerInsertDate={handleTriggerInsertDate}
         onTriggerInsertBanner={handleTriggerInsertBanner}
+        onTriggerInsertTable={handleTriggerInsertTable}
+        onTriggerTextColor={handleTriggerTextColor}
+        onTriggerFoldAllCode={handleTriggerFoldAllCode}
+        onTriggerExpandAllCode={handleTriggerExpandAllCode}
       />
 
       {/* Directory & Note Custom SVG Icon Picker Modal */}
