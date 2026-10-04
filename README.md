@@ -88,7 +88,6 @@ Digital-Garden/
 ## Screenshots
 <img width="1868" height="954" alt="Screenshot_20261004_075758" src="https://github.com/user-attachments/assets/40204e71-fe6a-41b9-a570-e4e701895667" />
 <img width="1868" height="954" alt="Screenshot_20261004_075709-1" src="https://github.com/user-attachments/assets/221b3845-42b1-41fb-a98a-4ea263d45765" />
-<img width="1868" height="954" alt="Screenshot_20261004_075709" src="https://github.com/user-attachments/assets/d19cca20-f4b1-4b05-8456-12fcaea5d9c5" />
 <img width="1868" height="954" alt="Screenshot_20261004_075648" src="https://github.com/user-attachments/assets/de686d2d-b6a2-4b3e-b388-8949157b86db" />
 <img width="1868" height="954" alt="Screenshot_20261004_075617-1" src="https://github.com/user-attachments/assets/574fe42d-1d05-4862-b863-e38648076baa" />
 <img width="1865" height="955" alt="Screenshot_20261004_075538" src="https://github.com/user-attachments/assets/42c0058b-887a-4cf8-92b1-832a7105e7d2" />
